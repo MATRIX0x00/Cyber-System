@@ -1,0 +1,2033 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tabbed Web Terminal</title>
+    
+    <!-- Tailwind CSS CDN for modern styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Google Font for consistent typography -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    
+    <!-- xterm.js library and CSS for terminal emulation -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@4.17.0/css/xterm.css" />
+    <script src="https://cdn.jsdelivr.net/npm/xterm@4.17.0/lib/xterm.js"></script>
+    <!-- xterm.js addons for functionality like auto-fitting -->
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.5.0/lib/xterm-addon-fit.js"></script>
+    
+    <!-- SocketIO library for real-time communication with the Flask backend -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0a0a0a; /* Darker black background */
+            color: #39ff14; /* Neon green text */
+            display: flex;
+            height: 100vh;
+            width: 100vw;
+            padding: 0;
+            margin: 0;
+            overflow: hidden; /* Hide default body scrollbar */
+        }
+        
+        .main-content {
+            flex: 1 1 auto;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            overflow: hidden;
+        }
+
+        .sidebar {
+            width: 320px; /* Responsive flexible width */
+            max-width: 35%;
+            background-color: #1a1a1a; /* Darker gray background for sidebar */
+            padding: 1rem;
+            border-left: 1px solid #39ff14; /* Neon green border */
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            flex-shrink: 0;
+        }
+
+        /* Container for the file editor */
+        .file-editor-container {
+            flex: 0 0 auto;
+            width: 100%;
+            height: 250px; /* Fixed height for editor */
+            max-width: 100%;
+            margin: 0 0 1rem 0;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            border: 1px solid #39ff14;
+            display: flex; /* Always display as a flex container */
+            flex-direction: column;
+            transition: height 0.3s ease-in-out;
+        }
+
+        /* Hide the editor with a smaller height */
+        .file-editor-container.hidden {
+            height: 0;
+            margin: 0;
+            border: none;
+            padding: 0;
+            overflow: hidden;
+        }
+        
+        /* Style the xterm.js container */
+        .terminal-container {
+            flex: 1 1 auto; /* Allow the terminal to aggressively take up remaining space */
+            width: 100%;
+            max-width: 100%;
+            min-height: 150px;
+            margin: 0;
+            border-radius: 8px;
+            overflow: hidden; /* Prevent content from spilling out */
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            border: 1px solid #39ff14;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Ensure the terminal itself is scrollable */
+        #terminal-panes {
+            height: 100%;
+            overflow-y: auto;
+        }
+
+        /* Custom scrollbar for xterm.js output */
+        .xterm-viewport::-webkit-scrollbar {
+            width: 12px;
+            height: 12px;
+        }
+        .xterm-viewport::-webkit-scrollbar-track {
+            background: #1a1a1a; /* Darker black */
+            border-radius: 10px;
+        }
+        .xterm-viewport::-webkit-scrollbar-thumb {
+            background-color: #39ff14; /* Neon green */
+            border-radius: 10px;
+            border: 3px solid #1a1a1a;
+        }
+        .xterm-viewport::-webkit-scrollbar-corner {
+            background: #1a1a1a;
+        }
+        .terminal-pane {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease-in-out;
+            background-image: url('/static/logo.svg');
+            background-size: 40%;
+            background-repeat: no-repeat;
+            background-position: center;
+            background-color: #0a0a0a;
+            direction: ltr !important;
+        }
+        .terminal-pane.active {
+            opacity: 1;
+            visibility: visible;
+        }
+        .rename-input {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 80%;
+            z-index: 10;
+        }
+
+        /* Custom styles for the tabs section to limit height and enable scrolling */
+        #tab-container {
+            max-height: 25vh;
+            overflow-y: auto;
+            transition: max-height 0.3s ease;
+        }
+        /* Custom styles for the commands section to limit height and enable scrolling */
+        #commands-list-container {
+            max-height: 25vh;
+            overflow-y: auto;
+            transition: max-height 0.3s ease;
+        }
+        /* Custom styles for the notes section to limit height and enable scrolling */
+        #notes-list-container {
+            max-height: 25vh;
+            overflow-y: auto;
+            transition: max-height 0.3s ease;
+        }
+        /* This class will be added to containers with more than 3 items */
+        .scrollable {
+            overflow-y: auto !important;
+        }
+        
+        /* Modal styles */
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        
+        .modal-content {
+            background-color: #1a1a1a;
+            padding: 2rem;
+            border-radius: 10px;
+            border: 1px solid #39ff14;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
+            width: 90%;
+            max-width: 500px;
+            color: #fff;
+        }
+        .hidden-sidebar {
+            display: none !important;
+        }
+        /* Custom scrollbar for everything */
+        ::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0a0a0a;
+        }
+        ::-webkit-scrollbar-thumb {
+            background-color: #39ff14;
+            border-radius: 5px;
+            border: 2px solid #0a0a0a;
+        }
+
+        .quad-grid {
+            display: grid !important;
+            grid-template-columns: repeat(2, 1fr);
+            grid-auto-rows: 45vh;
+            gap: 4px;
+            background-color: #39ff14;
+            height: 100vh !important;
+            width: 100%;
+            margin: 0;
+            padding: 0;
+            overflow-y: auto !important;
+            align-content: start;
+        }
+        .hidden-in-quad {
+            display: none !important;
+        }
+        .quad-expanded {
+            max-width: 100% !important;
+            border: none !important;
+            border-radius: 0 !important;
+            padding: 0 !important;
+            overflow: hidden !important;
+            height: 100vh !important;
+            flex: 1 1 auto !important;
+            display: block !important;
+            margin: 0 !important;
+        }
+        /* Added a scroll behavior for the main content when in quad mode */
+        .main-content.quad-active {
+            padding: 0 !important;
+            overflow: hidden !important;
+            height: 100vh !important;
+            width: 100% !important;
+        }
+        .quad-expanded #terminal-panes {
+            overflow-y: auto !important;
+            height: 100vh !important;
+        }
+        .quad-expanded #terminal-panes::-webkit-scrollbar {
+            width: 16px;
+        }
+        .quad-expanded #terminal-panes::-webkit-scrollbar-track {
+            background: #0a0a0a;
+        }
+        .quad-expanded #terminal-panes::-webkit-scrollbar-thumb {
+            background-color: #ff0000;
+            border-radius: 8px;
+            border: 3px solid #0a0a0a;
+        }
+        .quad-grid .terminal-pane {
+            display: none !important;
+        }
+        .quad-grid .terminal-pane.quad-visible {
+            position: relative !important;
+            opacity: 1 !important;
+            visibility: visible !important;
+            display: flex !important;
+            flex-direction: column !important;
+            width: 100% !important;
+            height: 100% !important;
+            min-height: 0 !important;
+            overflow: hidden !important;
+            background-image: url('/static/logo.svg');
+            background-size: 40%;
+            background-repeat: no-repeat;
+            background-position: center;
+            background-color: #0a0a0a;
+            box-sizing: border-box;
+            border: 1px solid #1a1a1a;
+        }
+        .quad-grid .terminal-pane.quad-visible .xterm {
+            flex: 1 1 auto;
+            min-height: 0;
+            padding: 4px;
+            height: 100%;
+        }
+        #fab-main-toggle {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: #ff00ff;
+            color: #fff;
+            font-size: 2rem;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 10000;
+            border: 2px solid #00ffcc;
+            box-shadow: 0 0 15px rgba(255, 0, 255, 0.5);
+            transition: transform 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+        }
+        #fab-main-toggle:hover {
+            transform: scale(1.1) rotate(15deg);
+            box-shadow: 0 0 25px #ff00ff;
+        }
+        .fab-container {
+            position: fixed;
+            bottom: 25px;
+            right: 90px;
+            left: auto;
+            transform: scale(0) translateX(50px);
+            transform-origin: right center;
+            display: flex;
+            flex-direction: row;
+            background: rgba(26, 26, 26, 0.95);
+            padding: 10px 20px;
+            border-radius: 30px;
+            border: 1px solid #39ff14;
+            gap: 15px;
+            z-index: 9999;
+            transition: all 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+            opacity: 0;
+            pointer-events: none;
+            box-shadow: 0 0 15px rgba(57, 255, 20, 0.3);
+        }
+        .fab-container.visible {
+            transform: scale(1) translateX(0);
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .fab-btn {
+            width: 45px;
+            height: 45px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            background: #333;
+            border: 1px solid #555;
+            font-size: 1.5rem;
+            color: #fff;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            padding: 0;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        } 
+        .fab-btn:hover {
+            background: #39ff14;
+            color: #000;
+            transform: scale(1.15);
+            border-color: #39ff14;
+            box-shadow: 0 0 12px #39ff14;
+        }
+        body.streamer-mode .xterm-screen,
+        body.streamer-mode #file-content-editor {
+            filter: blur(8px) !important;
+            transition: filter 0.3s ease;
+        }
+        @media (max-width: 768px) {
+            body {
+                flex-direction: column;
+                overflow-y: auto;
+            }
+            .sidebar {
+                width: 100%;
+                border-left: none;
+                border-top: 1px solid #39ff14;
+                height: auto;
+                max-height: 50vh;
+            }
+        }
+
+        /* Drag Windows */
+        .drag-window {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            width: 320px;
+            min-width: 250px;
+            max-width: 90vw;
+            max-height: 70vh;
+            background-color: rgba(26, 26, 26, 0.95);
+            border: 1px solid #39ff14;
+            border-radius: 8px;
+            z-index: 10000;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 10px 30px rgba(0, 255, 204, 0.4);
+            resize: both;
+            overflow: hidden;
+            backdrop-filter: blur(10px);
+        }
+        .drag-search {
+            width: calc(100% - 16px);
+            margin: 8px;
+            padding: 6px 10px;
+            background-color: #222;
+            color: #39ff14;
+            border: 1px solid #39ff14;
+            border-radius: 4px;
+            outline: none;
+            font-size: 12px;
+        }
+        .drag-search:focus {
+            box-shadow: 0 0 5px #39ff14;
+        }
+        .drag-window.hidden {
+            display: none !important;
+        }
+        .drag-window-header {
+            background-color: #333;
+            color: #39ff14;
+            padding: 10px;
+            font-weight: bold;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-top-left-radius: 8px;
+            border-top-right-radius: 8px;
+            cursor: move; /* Let the user know they can grab this bitch */
+        }
+        .drag-window-content {
+            padding: 10px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            overflow-y: auto;
+            flex-grow: 1;
+        }
+        .draggable-item {
+            background: #333;
+            color: #39ff14;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: grab;
+            font-size: 12px;
+            border: 1px solid #39ff14;
+            user-select: none;
+        }
+        .draggable-item:active {
+            cursor: grabbing;
+        }
+
+        /* ═══ FULL DARK THEME — Solid, no glass, no neon ═══ */
+        body.theme-dark {
+            background-color: #0a0a0a !important;
+            color: #cccccc !important;
+        }
+        body.theme-dark .sidebar,
+        body.theme-dark .modal-content {
+            background-color: #141414 !important;
+            border-color: #3a3a3a !important;
+            box-shadow: none !important;
+        }
+        body.theme-dark .terminal-pane,
+        body.theme-dark .terminal-container,
+        body.theme-dark #terminal-panes {
+            background-color: #000000 !important;
+            background-image: none !important;
+        }
+        body.theme-dark .xterm-viewport::-webkit-scrollbar-track { background: #101010 !important; }
+        body.theme-dark .xterm-viewport::-webkit-scrollbar-thumb { background-color: #3a3a3a !important; border-color: #101010 !important; }
+        body.theme-dark .xterm-viewport::-webkit-scrollbar-corner { background: #101010 !important; }
+        body.theme-dark * {
+            scrollbar-color: #3a3a3a #101010;
+        }
+        body.theme-dark h1, body.theme-dark h2, body.theme-dark h3 { color: #e0e0e0 !important; }
+        body.theme-dark input, body.theme-dark select, body.theme-dark textarea {
+            background: #101010 !important;
+            border-color: #3a3a3a !important;
+            color: #e0e0e0 !important;
+        }
+        /* ═══ FULL WHITE THEME — Solid, no glass, no neon ═══ */
+        body.theme-white {
+            background-color: #ffffff !important;
+            color: #1a1a1a !important;
+        }
+        body.theme-white .sidebar,
+        body.theme-white .modal-content {
+            background-color: #f5f5f5 !important;
+            border-color: #d0d0d0 !important;
+            box-shadow: none !important;
+        }
+        body.theme-white .terminal-pane,
+        body.theme-white .terminal-container,
+        body.theme-white #terminal-panes {
+            background-color: #1e1e1e !important;
+            background-image: none !important;
+        }
+        body.theme-white .xterm-viewport::-webkit-scrollbar-track { background: #f0f0f0 !important; }
+        body.theme-white .xterm-viewport::-webkit-scrollbar-thumb { background-color: #c0c0c0 !important; border-color: #f0f0f0 !important; }
+        body.theme-white .xterm-viewport::-webkit-scrollbar-corner { background: #f0f0f0 !important; }
+        body.theme-white * {
+            scrollbar-color: #c0c0c0 #f0f0f0;
+        }
+        body.theme-white h1, body.theme-white h2, body.theme-white h3 { color: #1a1a1a !important; }
+        body.theme-white input, body.theme-white select, body.theme-white textarea {
+            background: #ffffff !important;
+            border-color: #c0c0c0 !important;
+            color: #1a1a1a !important;
+        }
+        body.theme-white button { text-shadow: none !important; }
+        body.theme-white * {
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+        }
+        body.theme-dark button { text-shadow: none !important; }
+    </style>
+    <script>
+        // Apply saved cyber system theme (dark/white) on load — same-origin localStorage
+        (function() {
+            try {
+                const savedTheme = localStorage.getItem('cyber_theme');
+                if (savedTheme === 'dark' || savedTheme === 'white') {
+                    document.addEventListener('DOMContentLoaded', function() {
+                        document.body.classList.add('theme-' + savedTheme);
+                    });
+                }
+            } catch (e) {}
+        })();
+    </script>
+</head>
+<body>
+    <!-- Main content area for the terminal view -->
+    <div class="main-content">
+        <!-- HEADER WITH SETTINGS BUTTON -->
+        <div id="main-header" class="flex items-center justify-center gap-4">
+            <h1 class="text-3xl font-bold text-39ff14 mb-4 text-center">Tabbed Web Terminal</h1>
+            <button id="settings-btn" class="bg-gray-600 hover:bg-gray-700 text-white font-semibold py-2 px-4 rounded-lg shadow-md transition duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-50 mb-4">
+                Settings
+            </button>
+            <button id="quad-view-btn" class="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg shadow-md transition duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50 mb-4">
+                Quad View
+            </button>
+        </div>
+        
+        <!-- Main container for the File Editor -->
+        <div id="file-editor-view" class="file-editor-container bg-gray-900 p-4 flex flex-col gap-2">
+            <div class="flex items-center justify-between">
+                <h2 id="current-file-name" class="text-xl font-bold text-39ff14"></h2>
+                <div class="flex items-center gap-2">
+                    <button id="run-file-btn" class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 px-4 rounded-lg shadow-md transition duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-opacity-50">
+                        Run
+                    </button>
+                    <!-- New Replace Button -->
+                    <button id="replace-btn" class="bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg shadow-md transition duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-opacity-50">
+                        Replace
+                    </button>
+                    <button type="button" onclick="insertVar('file-content-editor', '{target}')" class="bg-orange-600 hover:bg-orange-700 text-white font-bold py-2 px-3 rounded-lg shadow-md">{target}</button>
+                    <button type="button" onclick="insertVar('file-content-editor', '{atk-ip}')" class="bg-orange-600 hover:bg-orange-700 text-white font-bold py-2 px-3 rounded-lg shadow-md">{atk-ip}</button>
+                    <button id="save-file-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg shadow-md transition duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50">
+                        Save
+                    </button>
+                    <button id="close-editor-btn" class="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg shadow-md transition duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50">
+                        Close
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Container for Find and Replace inputs -->
+            <div id="find-replace-container" class="hidden flex flex-col gap-2">
+                <div class="flex items-center gap-2">
+                    <input type="text" id="find-input" placeholder="Find text..." class="flex-1 bg-gray-800 text-white p-2 rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500">
+                    <input type="text" id="replace-input" placeholder="Replace with..." class="flex-1 bg-gray-800 text-white p-2 rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500">
+                    <button id="replace-all-btn" class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg shadow-md transition duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50">
+                        Replace All
+                    </button>
+                </div>
+            </div>
+
+            <textarea id="file-content-editor" class="flex-grow bg-gray-800 text-white font-mono p-4 rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500 text-sm"></textarea>
+        </div>
+        
+        <!-- Main container for the Terminal -->
+        <div id="terminal-view" class="terminal-container p-2 bg-gray-900 text-green-400 font-mono text-sm">
+            <!-- Floating windows for drag and drop -->
+            <div id="commands-drag-window" class="drag-window hidden">
+                <div class="drag-window-header">Commands <button class="close-drag-window text-red-500 hover:text-red-700">✖</button></div>
+                <input type="text" id="drag-commands-search" class="drag-search" placeholder="Search commands...">
+                <div id="commands-drag-content" class="drag-window-content"></div>
+            </div>
+            <div id="notes-drag-window" class="drag-window hidden">
+                <div class="drag-window-header">Notes <button class="close-drag-window text-red-500 hover:text-red-700">✖</button></div>
+                <input type="text" id="drag-notes-search" class="drag-search" placeholder="Search notes...">
+                <div id="notes-drag-content" class="drag-window-content"></div>
+            </div>
+            <div id="target-drag-window" class="drag-window hidden">
+                <div class="drag-window-header">Target Variables <button class="close-drag-window text-red-500 hover:text-red-700">✖</button></div>
+                <div class="drag-window-content p-4 flex flex-col gap-2">
+                    <label class="text-xs text-gray-400 font-bold">TARGET IP/DOMAIN ({target})</label>
+                    <input type="text" id="global-target-input" placeholder="e.g. 192.168.1.1" class="w-full px-3 py-2 rounded-lg bg-gray-800 text-white border border-gray-600 focus:outline-none focus:ring-1 focus:ring-39ff14 mb-2">
+                    <label class="text-xs text-gray-400 font-bold">ATTACK IP ({atk-ip})</label>
+                    <input type="text" id="global-atk-ip-input" placeholder="e.g. 10.10.10.5" class="w-full px-3 py-2 rounded-lg bg-gray-800 text-white border border-gray-600 focus:outline-none focus:ring-1 focus:ring-39ff14">
+                </div>
+            </div>
+            <div id="workflow-create-window" class="drag-window hidden" style="width: 450px; height: 550px;">
+                <div class="drag-window-header">Create/Edit Workflow <button class="close-drag-window text-red-500 hover:text-red-700">✖</button></div>
+                <div class="p-4 flex flex-col gap-2 h-full overflow-hidden">
+                    <input type="text" id="wf-name-input" placeholder="Workflow Name" class="w-full px-3 py-2 bg-gray-800 text-white border border-gray-600 rounded">
+                    <div class="flex gap-2">
+                        <input type="text" id="manual-cmd-name" placeholder="Name" class="w-1/3 px-2 py-1 bg-gray-700 text-white border border-gray-600 rounded text-xs focus:outline-none">
+                        <input type="text" id="manual-cmd-text" placeholder="Command" class="w-2/3 px-2 py-1 bg-gray-700 text-white border border-gray-600 rounded text-xs focus:outline-none">
+                        <button id="add-manual-cmd" class="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded font-bold">+</button>
+                    </div>
+                    <div id="wf-drop-zone" class="flex-grow border-2 border-dashed border-gray-600 rounded p-2 overflow-y-auto bg-gray-900">
+                        <p class="text-xs text-gray-500 text-center">Drag commands here or use manual add...</p>
+                        <div id="wf-items-list" class="flex flex-col gap-1 mt-2"></div>
+                    </div>
+                    <button id="save-wf-btn" class="bg-blue-600 text-white p-2 rounded">Save Workflow</button>
+                </div>
+            </div>
+            <div id="workflow-exec-window" class="drag-window hidden" style="width: auto; min-width: 350px; max-width: 500px;">
+                <div class="drag-window-header">Manage Workflows <button class="close-drag-window text-red-500 hover:text-red-700">✖</button></div>
+                <input type="text" id="drag-wf-search" class="drag-search" placeholder="Search workflows...">
+                <div id="wf-exec-list" class="drag-window-content" style="display:flex; flex-direction:column; gap:5px;"></div>
+            </div>
+            <div id="terminal-panes">
+                <!-- Terminal panes will be inserted here dynamically -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Right-side panel for tabs and controls -->
+    <div class="sidebar">
+        <div class="flex flex-col gap-4">
+            <div class="flex items-center justify-between">
+                <h2 class="text-xl font-bold text-39ff14">Terminals</h2>
+                <button id="new-tab-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg shadow-md transition duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50">
+                    + New
+                </button>
+            </div>
+            
+            <!-- Search bar for terminals -->
+            <input type="text" id="search-bar" placeholder="Search terminals..." class="px-3 py-2 rounded-lg bg-gray-700 text-39ff14 placeholder-39ff14 focus:outline-none focus:ring-2 focus:ring-39ff14">
+            
+            <!-- Tab list container -->
+            <div id="tab-container" class="flex flex-col gap-2">
+                <!-- Tab buttons will be inserted here dynamically -->
+            </div>
+
+            <!-- Section for Database Commands -->
+            <hr class="border-39ff14 my-4">
+            <div class="flex items-center justify-between">
+                <h2 class="text-xl font-bold text-39ff14">Database Commands</h2>
+                <button id="new-command-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg shadow-md transition duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50">
+                    + New
+                </button>
+            </div>
+            <input type="text" id="commands-search-bar" placeholder="Search commands..." class="px-3 py-2 rounded-lg bg-gray-700 text-39ff14 placeholder-39ff14 focus:outline-none focus:ring-2 focus:ring-39ff14">
+            
+            <!-- File list container for commands -->
+            <div id="commands-list-container" class="flex flex-col gap-2 text-sm">
+                <!-- Command files will be inserted here dynamically -->
+            </div>
+
+            <!-- New section for Database Notes -->
+            <hr class="border-39ff14 my-4">
+            <div class="flex items-center justify-between">
+                <h2 class="text-xl font-bold text-39ff14">Database Notes</h2>
+                <button id="new-note-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg shadow-md transition duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50">
+                    + New
+                </button>
+            </div>
+            <input type="text" id="notes-search-bar" placeholder="Search notes..." class="px-3 py-2 rounded-lg bg-gray-700 text-39ff14 placeholder-39ff14 focus:outline-none focus:ring-2 focus:ring-39ff14">
+            
+            <!-- File list container for notes -->
+            <div id="notes-list-container" class="flex flex-col gap-2 text-sm">
+                <!-- Notes files will be inserted here dynamically -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for New File Creation (MODIFIED) -->
+    <div id="new-file-modal" class="modal">
+        <div class="modal-content">
+            <h3 class="text-xl font-bold mb-4 text-center">Create New File</h3>
+            <div class="flex flex-col gap-4">
+                <input type="text" id="new-file-name" placeholder="File Name (e.g., my file.txt)" class="px-3 py-2 rounded-lg bg-gray-800 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                
+                <!-- NEW: Path Selector -->
+                <select id="new-file-path-select" class="px-3 py-2 rounded-lg bg-gray-800 text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <!-- Options populated dynamically -->
+                </select>
+
+                <div class="flex gap-2">
+                    <button type="button" onclick="insertVar('new-file-content', '{target}')" class="bg-orange-600 hover:bg-orange-700 text-xs text-white font-bold py-1 px-2 rounded">+ {target}</button>
+                    <button type="button" onclick="insertVar('new-file-content', '{atk-ip}')" class="bg-orange-600 hover:bg-orange-700 text-xs text-white font-bold py-1 px-2 rounded">+ {atk-ip}</button>
+                </div>
+                <textarea id="new-file-content" placeholder="File Content" class="px-3 py-2 rounded-lg bg-gray-800 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 h-40"></textarea>
+                <div class="flex justify-end gap-2">
+                    <button id="cancel-new-file" class="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg shadow-md transition duration-300">
+                        Cancel
+                    </button>
+                    <button id="save-new-file" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg shadow-md transition duration-300">
+                        Save
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for Settings (MODIFIED) -->
+    <div id="settings-modal" class="modal">
+        <div class="modal-content">
+            <h3 class="text-xl font-bold mb-4 text-center">Application Settings</h3>
+            <div class="flex flex-col gap-4">
+                
+                <!-- Commands Path List Management -->
+                <label class="text-gray-300 font-semibold">Commands Paths</label>
+                <div id="commands-paths-list" class="flex flex-col gap-2 p-2 bg-gray-800 rounded-lg max-h-40 overflow-y-auto">
+                    <!-- Dynamic paths here -->
+                </div>
+                <div class="flex items-center gap-2">
+                    <input type="text" id="new-command-path-input" placeholder="New Commands Path (e.g., /home/user/my_cmds)" class="flex-grow px-3 py-2 rounded-lg bg-gray-800 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <button id="add-command-path-btn" class="bg-green-600 hover:bg-green-700 text-white font-semibold py-1 px-3 rounded-lg">Add</button>
+                </div>
+
+                <!-- Notes Path List Management -->
+                <label class="text-gray-300 font-semibold mt-4">
+Notes Paths</label>
+                <div id="notes-paths-list" class="flex flex-col gap-2 p-2 bg-gray-800 rounded-lg max-h-40 overflow-y-auto">
+                    <!-- Dynamic paths here -->
+                </div>
+                <div class="flex items-center gap-2">
+                    <input type="text" id="new-note-path-input" placeholder="New Notes Path (e.g., /mnt/docs/notes)" class="flex-grow px-3 py-2 rounded-lg bg-gray-800 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <button id="add-note-path-btn" class="bg-green-600 hover:bg-green-700 text-white font-semibold py-1 px-3 rounded-lg">Add</button>
+                </div>
+                
+                <p class="text-sm text-yellow-400 mt-4">Note: Changing paths will attempt to create the new directory and requires a file list refresh. Paths must not be empty.</p>
+
+                <div class="flex justify-end gap-2 mt-4">
+                    <button id="cancel-settings" class="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg shadow-md transition duration-300">
+                        Cancel
+                    </button>
+                    <button id="save-settings" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg shadow-md transition duration-300">
+                        Save Changes
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <button id="fab-main-toggle" title="Toggle that sick toolbar">👾</button>
+    <div id="fab-container" class="fab-container">
+        <div class="flex items-center bg-gray-800 rounded-full px-3 border border-39ff14 shadow-lg text-white font-bold text-xs">
+            <input type="checkbox" id="auto-run-checkbox" class="mr-2">
+            <label for="auto-run-checkbox" class="cursor-pointer">Auto-Run</label>
+        </div>
+        <div class="flex items-center bg-gray-800 rounded-full px-3 border border-39ff14 shadow-lg text-white font-bold text-xs">
+            <input type="checkbox" id="hover-mode-checkbox" class="mr-2" checked>
+            <label for="hover-mode-checkbox" class="cursor-pointer" title="Show floating windows on hover">Hover Popup</label>
+        </div>
+        <button id="fab-add-terminals" class="fab-btn" title="Add 4 Terminals">➕</button>
+        <button id="fab-commands" class="fab-btn" title="New Command">📝</button>
+        <button id="fab-notes" class="fab-btn" title="New Note">📓</button>
+        <button id="fab-toggle-commands-drag" class="fab-btn" title="Show Commands Box">📁</button>
+        <button id="fab-toggle-notes-drag" class="fab-btn" title="Show Notes Box">📂</button>
+        <button id="fab-toggle-target-drag" class="fab-btn" title="Set Target Variable">🎯</button>
+        <button id="fab-workflow-create" class="fab-btn" title="Create Workflow">🏗️</button>
+        <button id="fab-workflow-exec" class="fab-btn" title="Run Workflow">⚡</button>
+        <button id="fab-streamer-mode" class="fab-btn bg-purple-600 hover:bg-purple-700" title="Toggle Streamer Mode (Blur)">👁️</button>
+        <button id="fab-clear-all" class="fab-btn bg-yellow-600 hover:bg-yellow-700" title="Clean All Terminals">☢️</button>
+        <button id="fab-exit-quad" class="fab-btn bg-red-600 hover:bg-red-700" title="Exit Quad View">❌</button>
+    </div>
+
+    <script>
+        // Global variables for managing sessions and UI state
+        let tabs = {};
+        let tabCounter = 0;
+        let activeTabId = null;
+        let allCommands = []; // Array of {filename, path, display_path} objects
+        let allNotes = []; // Array of {filename, path, display_path} objects
+        let currentEditingFile = { name: null, directory: null, path: null }; // MODIFIED: Added 'path'
+        let commandsPaths = []; // NEW: Array to store all command paths
+        let notesPaths = []; // NEW: Array to store all notes paths
+        let currentWfCmds = []; // Array of cmds for the workflow editor
+        let renderWfItemsList = null; // Function to render the workflow items
+        
+        // UI Elements
+        const terminalView = document.getElementById('terminal-view');
+        const fileEditorView = document.getElementById('file-editor-view');
+        const fileContentEditor = document.getElementById('file-content-editor');
+        const currentFileNameSpan = document.getElementById('current-file-name');
+        const saveFileBtn = document.getElementById('save-file-btn');
+        const runFileBtn = document.getElementById('run-file-btn');
+        const closeEditorBtn = document.getElementById('close-editor-btn');
+        const notesListContainer = document.getElementById('notes-list-container');
+        const tabContainer = document.getElementById('tab-container');
+        const commandsListContainer = document.getElementById('commands-list-container');
+        
+        // New UI elements for the replace functionality
+        const replaceBtn = document.getElementById('replace-btn');
+        const findReplaceContainer = document.getElementById('find-replace-container');
+        const findInput = document.getElementById('find-input');
+        const replaceInput = document.getElementById('replace-input');
+        const replaceAllBtn = document.getElementById('replace-all-btn');
+
+        // New UI Elements for file creation modal
+        const newFileModal = document.getElementById('new-file-modal');
+        const newFileNameInput = document.getElementById('new-file-name');
+        const newFilePathSelect = document.getElementById('new-file-path-select'); // NEW
+        const newFileContentTextarea = document.getElementById('new-file-content');
+        const saveNewFileBtn = document.getElementById('save-new-file');
+        const cancelNewFileBtn = document.getElementById('cancel-new-file');
+        let currentCreationDirectory = null;
+        
+        // NEW UI Elements for settings modal (MODIFIED)
+        const settingsBtn = document.getElementById('settings-btn');
+        const settingsModal = document.getElementById('settings-modal');
+        // Removed old single-path inputs
+        const commandsPathsList = document.getElementById('commands-paths-list');
+        const newCommandPathInput = document.getElementById('new-command-path-input');
+        const addCommandPathBtn = document.getElementById('add-command-path-btn');
+        const notesPathsList = document.getElementById('notes-paths-list');
+        const newNotePathInput = document.getElementById('new-note-path-input');
+        const addNotePathBtn = document.getElementById('add-note-path-btn');
+        const saveSettingsBtn = document.getElementById('save-settings');
+        const cancelSettingsBtn = document.getElementById('cancel-settings');
+
+
+        /**
+         * Creates a new terminal tab and session.
+         */
+        function createNewTab(skipActivation = false) {
+            // Generate a unique ID for the new tab
+            const tabId = `tab-${++tabCounter}`;
+
+            // --- UI Creation ---
+            const tabButton = document.createElement('button');
+            tabButton.id = `btn-${tabId}`;
+            tabButton.className = 'relative py-2 px-4 rounded-lg bg-gray-700 text-gray-300 font-medium transition-colors duration-200 hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 text-left';
+            tabContainer.appendChild(tabButton);
+
+            const tabText = document.createElement('span');
+            tabText.textContent = `Terminal ${tabCounter}`;
+            tabButton.appendChild(tabText);
+
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'absolute top-0 left-0 w-full h-full bg-gray-800 text-white rounded-lg px-2 text-center border-none focus:outline-none';
+            input.style.display = 'none'; // Initially hidden
+            tabButton.appendChild(input);
+
+            const terminalPane = document.createElement('div');
+            terminalPane.id = `pane-${tabId}`;
+            terminalPane.className = 'terminal-pane';
+            document.getElementById('terminal-panes').appendChild(terminalPane);
+            
+            // Make pane accept drag and drop files
+            terminalPane.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                terminalPane.style.border = '2px dashed #39ff14';
+            });
+            terminalPane.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                terminalPane.style.border = 'none';
+            });
+            terminalPane.addEventListener('drop', (e) => {
+                e.preventDefault();
+                terminalPane.style.border = 'none';
+                try {
+                    const dropData = JSON.parse(e.dataTransfer.getData('text/plain'));
+                    const targetValue = document.getElementById('global-target-input').value.trim();
+                    const atkIpValue = document.getElementById('global-atk-ip-input').value.trim();
+                    const autoRun = document.getElementById('auto-run-checkbox') ? document.getElementById('auto-run-checkbox').checked : false;
+                    if (tabs[tabId].socket) {
+                        tabs[tabId].isUsed = true;
+                        tabs[tabId].socket.emit('run_file', {
+                            filename: dropData.filename,
+                            directory: dropData.directory,
+                            path: dropData.path,
+                            target_replacement: targetValue,
+                            atk_ip_replacement: atkIpValue,
+                            auto_run: autoRun
+                        });
+                    }
+                } catch (err) {
+                    console.error("Drop failed", err);
+                }
+            });
+
+            // --- Terminal and Socket Initialization ---
+            const savedCyberTheme = localStorage.getItem('cyber_theme');
+            let termTheme;
+            if (savedCyberTheme === 'dark') {
+                termTheme = { background: '#000000', foreground: '#d0d0d0' };
+            } else if (savedCyberTheme === 'white') {
+                termTheme = { background: '#1e1e1e', foreground: '#e0e0e0' };
+            } else {
+                termTheme = { background: 'rgba(10, 10, 10, 0.75)', foreground: '#39ff14' };
+            }
+            const term = new Terminal({
+                cursorBlink: true,
+                convertEol: true,
+                allowTransparency: true,
+                theme: termTheme
+            });
+
+            const fitAddon = new FitAddon.FitAddon();
+            term.loadAddon(fitAddon);
+            const socket = io('/web_term', { forceNew: true });
+
+            tabs[tabId] = {
+                term,
+                socket,
+                fitAddon,
+                tabButton,
+                terminalPane,
+                isUsed: false
+            };
+
+            term.open(terminalPane);
+            term.write('\x1b[?45h'); // Enable reverse wraparound for multi-line backspace
+            fitAddon.fit();
+            
+            socket.on('terminal_output', (data) => {
+                term.write(data.data);
+            });
+
+            // MODIFIED: Store the file path as well and auto-replace target macros
+            socket.on('file_content_for_editor', (data) => {
+                if (data.content !== undefined && data.content.startsWith('Error:')) {
+                     // Display a general error message
+                     currentFileNameSpan.textContent = data.filename;
+                     fileContentEditor.value = data.content;
+                     currentEditingFile.name = null; // Invalidate current file
+                     currentEditingFile.directory = null;
+                     currentEditingFile.path = null;
+                     fileEditorView.classList.remove('hidden');
+                     return;
+                }
+                
+                if (data.content !== undefined) {
+                    let processedContent = data.content;
+                    const targetVal = document.getElementById('global-target-input').value.trim();
+                    const atkIpVal = document.getElementById('global-atk-ip-input').value.trim();
+                    if (targetVal) {
+                        processedContent = processedContent.replace(/\{target\}/g, targetVal);
+                        processedContent = processedContent.replace(/\{ip\}/g, targetVal);
+                    }
+                    if (atkIpVal) {
+                        processedContent = processedContent.replace(/\{atk-ip\}/g, atkIpVal);
+                        processedContent = processedContent.replace(/\{attacker-ip\}/g, atkIpVal);
+                    }
+                    
+                    fileContentEditor.value = processedContent;
+                    currentFileNameSpan.textContent = data.filename;
+                    currentEditingFile.name = data.filename;
+                    currentEditingFile.directory = data.directory;
+                    currentEditingFile.path = data.path; // NEW: Store the path
+                    fileEditorView.classList.remove('hidden');
+                } else {
+                    // This is a modal-like behavior for alerts, avoiding the native alert()
+                    const alertModal = document.getElementById('new-file-modal');
+                    const alertMessage = alertModal.querySelector('.modal-content h3');
+                    const alertContent = alertModal.querySelector('.modal-content .flex-col');
+                    
+                    alertMessage.textContent = 'Error';
+                    alertContent.innerHTML = `<p class="text-center text-red-400">${data.content}</p>`;
+                    alertModal.style.display = 'flex';
+                }
+            });
+            
+            // MODIFIED: Expects an array of {filename, path, display_path} objects
+            socket.on('file_list', (data) => {
+                if (data.directory === "commands") {
+                    allCommands = data.files;
+                    renderFiles('commands', allCommands);
+                } else if (data.directory === "notes") {
+                    allNotes = data.files;
+                    renderFiles('notes', allNotes);
+                }
+            });
+
+            socket.on('file_creation_status', (data) => {
+                if (data.success) {
+                    newFileModal.style.display = 'none';
+                    // The server will automatically refresh the file list
+                } else {
+                    const alertModal = document.getElementById('new-file-modal');
+                    const alertMessage = alertModal.querySelector('.modal-content h3');
+                    const alertContent = alertModal.querySelector('.modal-content .flex-col');
+                    
+                    alertMessage.textContent = 'Error';
+                    // Re-render the form content
+                    alertContent.innerHTML = `
+                        <input type="text" id="new-file-name" placeholder="File Name (e.g., my file.txt)" class="px-3 py-2 rounded-lg bg-gray-800 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <select id="new-file-path-select" class="px-3 py-2 rounded-lg bg-gray-800 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"></select>
+                        <textarea id="new-file-content" placeholder="File Content" class="px-3 py-2 rounded-lg bg-gray-800 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 h-40"></textarea>
+                        <p class="text-center text-red-400 mt-2">Error: ${data.message}</p>
+                        <div class="flex justify-end gap-2 mt-4">
+                            <button id="cancel-new-file" class="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg shadow-md transition duration-300">Cancel</button>
+                            <button id="save-new-file" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg shadow-md transition duration-300">Save</button>
+                        </div>
+                    `;
+                    alertModal.style.display = 'flex';
+                }
+            });
+
+            // NEW: Receive current path settings (now expects arrays)
+            socket.on('current_paths', (data) => {
+                commandsPaths = data.commands_paths || [];
+                notesPaths = data.notes_paths || [];
+                
+                // Only render the paths list if the settings modal is open (better UX)
+                if (settingsModal.style.display === 'flex') {
+                    renderPathsList('commands', commandsPaths);
+                    renderPathsList('notes', notesPaths);
+                }
+            });
+            
+            // NEW: Receive signal that paths were updated on the server
+            socket.on('paths_updated', (data) => {
+                if (data.success) {
+                    fetchFiles('commands');
+                    fetchFiles('notes');
+                    socket.emit('get_current_paths'); 
+                }
+            });
+            socket.on('workflow_list', (workflows) => {
+                const execList = document.getElementById('wf-exec-list');
+                execList.innerHTML = '';
+                Object.keys(workflows).forEach(name => {
+                    const itemContainer = document.createElement('div');
+                    itemContainer.className = 'flex items-center justify-between bg-gray-800 p-2 rounded mb-1 border border-gray-700 w-full gap-2 flex-wrap';
+
+                    const titleSpan = document.createElement('span');
+                    titleSpan.className = 'text-39ff14 font-bold text-xs flex-grow mr-2';
+                    titleSpan.style.wordBreak = 'break-word';
+                    titleSpan.style.whiteSpace = 'normal';
+                    titleSpan.textContent = `${name} (${workflows[name].length} cmds)`;
+
+                    const btnGroup = document.createElement('div');
+                    btnGroup.className = 'flex gap-1 shrink-0';
+
+                    const runBtn = document.createElement('button');
+                    runBtn.className = 'bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 rounded text-xs font-bold';
+                    runBtn.innerHTML = '▶';
+                    runBtn.title = 'Run Workflow (Existing Terminals)';
+                    runBtn.onclick = () => {
+                        const cmds = workflows[name];
+                        let emptyTerminalIds = Object.keys(tabs).filter(id => !tabs[id].isUsed);
+                        
+                        if (cmds.length > emptyTerminalIds.length) {
+                            alert(`You should create first ${cmds.length} empty terminals! You only have ${emptyTerminalIds.length} available.`);
+                            return;
+                        }
+
+                        const autoRun = document.getElementById('auto-run-checkbox') ? document.getElementById('auto-run-checkbox').checked : false;
+                        cmds.forEach((cmd, i) => {
+                            const sid = emptyTerminalIds[i];
+                            tabs[sid].isUsed = true;
+                            
+                            const runPayload = {
+                                filename: cmd.filename,
+                                content: cmd.content,
+                                path: cmd.path,
+                                directory: cmd.directory || 'commands',
+                                target_replacement: document.getElementById('global-target-input').value,
+                                atk_ip_replacement: document.getElementById('global-atk-ip-input').value,
+                                auto_run: autoRun
+                            };
+                            
+                            if (tabs[sid].socket.connected) {
+                                tabs[sid].socket.emit('run_file', runPayload);
+                            } else {
+                                tabs[sid].socket.on('connect', () => {
+                                    setTimeout(() => tabs[sid].socket.emit('run_file', runPayload), 1500);
+                                });
+                            }
+                        });
+                    };
+
+                    const runNewBtn = document.createElement('button');
+                    runNewBtn.className = 'bg-teal-600 hover:bg-teal-700 text-white px-2 py-1 rounded text-xs font-bold';
+                    runNewBtn.innerHTML = '🚀';
+                    runNewBtn.title = 'Run Workflow (Smart Run)';
+                    runNewBtn.onclick = () => {
+                        const cmds = workflows[name];
+                        const autoRun = document.getElementById('auto-run-checkbox') ? document.getElementById('auto-run-checkbox').checked : false;
+                        let emptyTerminalIds = Object.keys(tabs).filter(id => !tabs[id].isUsed);
+                        
+                        if (cmds.length > emptyTerminalIds.length) {
+                            const deficit = cmds.length - emptyTerminalIds.length;
+                            if (!confirm(`Listen up, fuckface! You need ${deficit} more empty terminals to run this workflow (Required: ${cmds.length}, Available: ${emptyTerminalIds.length}). Do you want me to automatically add ${deficit} more terminals and run the commands?`)) {
+                                return;
+                            }
+                        }
+
+                        cmds.forEach((cmd, i) => {
+                            let targetTabId;
+                            if (i < emptyTerminalIds.length) {
+                                targetTabId = emptyTerminalIds[i];
+                            } else {
+                                createNewTab(true);
+                                targetTabId = 'tab-' + tabCounter;
+                                if (typeof quadMode !== 'undefined' && quadMode) {
+                                    quadTerminalsCount += 1;
+                                }
+                            }
+                            
+                            const targetSocket = tabs[targetTabId].socket;
+                            tabs[targetTabId].isUsed = true;
+                            const runPayload = {
+                                filename: cmd.filename,
+                                content: cmd.content,
+                                path: cmd.path,
+                                directory: cmd.directory || 'commands',
+                                target_replacement: document.getElementById('global-target-input').value,
+                                atk_ip_replacement: document.getElementById('global-atk-ip-input').value,
+                                auto_run: autoRun
+                            };
+                            const executePayload = () => setTimeout(() => targetSocket.emit('run_file', runPayload), 1500);
+                            
+                            if (targetSocket.connected) {
+                                executePayload();
+                            } else {
+                                targetSocket.on('connect', executePayload);
+                            }
+                        });
+                        if (typeof quadMode !== 'undefined' && quadMode) {
+                            updateQuadView();
+                        }
+                    };
+
+                    const editBtn = document.createElement('button');
+                    editBtn.className = 'bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded text-xs font-bold';
+                    editBtn.innerHTML = '✏';
+                    editBtn.title = 'Edit Workflow';
+                    editBtn.onclick = () => {
+                        document.getElementById('wf-name-input').value = name;
+                        currentWfCmds = [...workflows[name]];
+                        if (renderWfItemsList) renderWfItemsList();
+                        document.getElementById('workflow-create-window').classList.remove('hidden');
+                    };
+
+                    const delBtn = document.createElement('button');
+                    delBtn.className = 'bg-red-600 hover:bg-red-700 text-white px-2 py-1 rounded text-xs font-bold';
+                    delBtn.innerHTML = '🗑';
+                    delBtn.title = 'Delete Workflow';
+                    delBtn.onclick = () => {
+                        if(confirm(`Are you sure you want to annihilate the workflow '${name}'?`)) {
+                            tabs[activeTabId].socket.emit('delete_workflow', {name});
+                        }
+                    };
+
+                    btnGroup.appendChild(runBtn);
+                    btnGroup.appendChild(runNewBtn);
+                    btnGroup.appendChild(editBtn);
+                    btnGroup.appendChild(delBtn);
+                    itemContainer.appendChild(titleSpan);
+                    itemContainer.appendChild(btnGroup);
+                    execList.appendChild(itemContainer);
+                });
+            });
+
+            // Send keyboard input to the server
+            term.onKey(e => {
+                const ev = e.domEvent;
+                const printable = !ev.altKey && !ev.ctrlKey && !ev.metaKey;
+
+                if (ev.ctrlKey && ev.key === 'c') {
+                    socket.emit('terminal_input', { 'command': '\x03' });
+                } else {
+                    // Handled by onData for standard input
+                }
+            });
+
+            term.onData(data => {
+                // Filter out Ctrl+C handled by onKey to avoid double sends
+                if (data !== '\x03') {
+                    if (data === '\r') tabs[tabId].isUsed = true;
+                    socket.emit('terminal_input', { 'command': data });
+                }
+            });
+
+            // --- UI Event Handlers ---
+            tabButton.addEventListener('click', (e) => {
+                if (e.target !== input) {
+                    activateTab(tabId);
+                }
+            });
+            
+            tabButton.addEventListener('dblclick', (e) => {
+                tabText.style.display = 'none';
+                input.style.display = 'block';
+                input.value = tabText.textContent;
+                input.focus();
+                e.stopPropagation();
+            });
+
+            const finalizeRename = () => {
+                let newName = input.value.trim();
+                if (newName === '') {
+                    newName = tabText.textContent;
+                }
+                tabText.textContent = newName;
+                input.style.display = 'none';
+                tabText.style.display = 'inline';
+            };
+
+            input.addEventListener('blur', finalizeRename);
+            input.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter') {
+                    finalizeRename();
+                }
+            });
+            renderTerminals();
+            if (skipActivation !== true) activateTab(tabId);
+        }
+
+        /**
+         * Sets a tab as the active one, updating UI and event listeners.
+         * @param {string} tabId - The ID of the tab to activate.
+         */
+        function activateTab(tabId) {
+            if (activeTabId !== null && tabs[activeTabId]) {
+                const oldTab = tabs[activeTabId];
+                oldTab.terminalPane.classList.remove('active');
+                oldTab.tabButton.classList.remove('bg-blue-600', 'text-white');
+                oldTab.tabButton.classList.add('bg-gray-700', 'text-gray-300');
+            }
+
+            const newTab = tabs[tabId];
+            if (newTab) {
+                newTab.terminalPane.classList.add('active');
+                newTab.tabButton.classList.remove('bg-gray-700', 'text-gray-300');
+                newTab.tabButton.classList.add('bg-blue-600', 'text-white');
+                newTab.term.focus();
+                newTab.fitAddon.fit();
+                activeTabId = tabId;
+            }
+        }
+
+        /**
+         * Renders the list of terminals, applying the 3-item limit and scrollbar logic.
+         * @param {string} query - The search query.
+         */
+        function renderTerminals(query = '') {
+            const normalizedQuery = query.toLowerCase().trim();
+            const tabButtons = Object.values(tabs).map(tab => tab.tabButton);
+            
+            tabButtons.forEach(button => {
+                const tabText = button.querySelector('span').textContent;
+                if (tabText.toLowerCase().includes(normalizedQuery)) {
+                    button.style.display = 'block';
+                } else {
+                    button.style.display = 'none';
+                }
+            });
+
+            // Auto-scrolling handled natively now
+        }
+
+        /**
+         * Filters the list of terminals based on the search input.
+         * @param {string} query - The search query.
+         */
+        function searchTerminals(query) {
+            renderTerminals(query);
+        }
+        
+        /**
+         * Fetches a list of files from the server.
+         * @param {string} directory - The directory type to fetch files from ('commands' or 'notes').
+         */
+        function fetchFiles(directory) {
+            if (tabs['tab-1'] && tabs['tab-1'].socket) {
+                const socket = tabs['tab-1'].socket;
+                socket.emit('get_files', { directory: directory });
+            }
+        }
+        
+        /**
+         * Renders the list of paths in the settings modal.
+         * @param {string} directoryType - 'commands' or 'notes'.
+         * @param {string[]} paths - Array of path strings.
+         */
+        function renderPathsList(directoryType, paths) {
+            const listContainer = directoryType === 'commands' ? commandsPathsList : notesPathsList;
+            listContainer.innerHTML = '';
+
+            // Filter out empty strings and ensure uniqueness before rendering
+            const uniquePaths = Array.from(new Set(paths.filter(p => p.trim() !== '')));
+
+            uniquePaths.forEach((path) => {
+                const pathItem = document.createElement('div');
+                pathItem.className = 'flex items-center justify-between bg-gray-700 p-2 rounded';
+                pathItem.innerHTML = `
+                    <span class="text-sm flex-grow">${path}</span>
+                    <button data-path="${path}" data-type="${directoryType}" class="remove-path-btn text-red-400 hover:text-red-500 ml-4 font-bold text-xs">Remove</button>
+                `;
+                listContainer.appendChild(pathItem);
+            });
+
+            // Re-attach event listeners to all remove buttons
+            listContainer.querySelectorAll('.remove-path-btn').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const pathToRemove = e.target.dataset.path;
+                    const type = e.target.dataset.type;
+                    
+                    if (type === 'commands') {
+                        commandsPaths = commandsPaths.filter(p => p !== pathToRemove);
+                        renderPathsList('commands', commandsPaths);
+                    } else if (type === 'notes') {
+                        notesPaths = notesPaths.filter(p => p !== pathToRemove);
+                        renderPathsList('notes', notesPaths);
+                    }
+                });
+            });
+        }
+        
+        /**
+         * Renders the list of files in the sidebar.
+         * @param {string} directory - The directory type name.
+         * @param {Object[]} files - An array of file objects {filename, path, display_path}.
+         */
+        function renderFiles(directory, files) {
+            const fileListContainer = document.getElementById(`${directory}-list-container`);
+            fileListContainer.innerHTML = '';
+            
+            files.forEach(fileObj => {
+                // fileObj is {filename: "ls_command.sh", path: "commands/dev", display_path: "commands/dev"}
+                
+                let displayName = fileObj.filename;
+                const lastDotIndex = fileObj.filename.lastIndexOf('.');
+                if (lastDotIndex > 0) { 
+                    displayName = fileObj.filename.substring(0, lastDotIndex);
+                }
+
+                const fileItemContainer = document.createElement('div');
+                fileItemContainer.className = 'py-1 px-4 rounded-lg bg-gray-600 text-gray-200 flex flex-col items-start justify-between transition-colors duration-200';
+
+                const fileNameSpan = document.createElement('span');
+                fileNameSpan.textContent = displayName;
+                fileNameSpan.className = 'cursor-pointer hover:underline font-bold';
+                
+                // Show the path where the file is located
+                const filePathSpan = document.createElement('span');
+                filePathSpan.textContent = `Path: ${fileObj.display_path}`;
+                filePathSpan.className = 'text-xs text-gray-400 italic';
+                
+                // On click, pass the full path and filename
+                fileItemContainer.onclick = () => {
+                    const activeTerminalSocket = tabs[activeTabId].socket;
+                    if (activeTerminalSocket) {
+                        activeTerminalSocket.emit('get_file_content_for_editor', { 
+                            filename: fileObj.filename, 
+                            directory: directory, 
+                            path: fileObj.path // IMPORTANT: Pass the specific file path
+                        });
+                    }
+                };
+
+                fileItemContainer.appendChild(fileNameSpan);
+                fileItemContainer.appendChild(filePathSpan);
+                fileListContainer.appendChild(fileItemContainer);
+            });
+            
+            // Auto-scrolling handled natively now
+
+            // Update drag windows dynamically
+            const dragContent = document.getElementById(`${directory}-drag-content`);
+            if (dragContent) {
+                dragContent.innerHTML = '';
+                files.forEach(fileObj => {
+                    const item = document.createElement('div');
+                    item.className = 'draggable-item';
+                    item.draggable = true;
+                    item.textContent = fileObj.filename;
+                    item.addEventListener('dragstart', (e) => {
+                        e.dataTransfer.setData('text/plain', JSON.stringify({
+                            filename: fileObj.filename,
+                            directory: directory,
+                            path: fileObj.path
+                        }));
+                    });
+                    dragContent.appendChild(item);
+                });
+            }
+        }
+        
+        /**
+         * Filters the list of files based on the search input.
+         * This now searches by filename and file path.
+         * @param {string} directory - The directory to search in ('commands' or 'notes').
+         * @param {string} query - The search query.
+         */
+        function searchFiles(directory, query) {
+            const normalizedQuery = query.toLowerCase().trim();
+            const searchWords = normalizedQuery.split(/\s+/).filter(Boolean);
+            const allFiles = directory === 'commands' ? allCommands : allNotes;
+            
+            const filteredFiles = allFiles.filter(fileObj => {
+                const normalizedFilename = fileObj.filename.toLowerCase();
+                const normalizedPath = fileObj.display_path.toLowerCase();
+                // Check if the filename OR path contains all search words
+                return searchWords.every(word => normalizedFilename.includes(word) || normalizedPath.includes(word));
+            });
+            
+            renderFiles(directory, filteredFiles);
+        }
+
+        // Main entry point for the application.
+        window.addEventListener('message', (event) => {
+            if (event.data && event.data.type === 'cyber_target_update') {
+                const targetInput = document.getElementById('global-target-input');
+                const atkIpInput = document.getElementById('global-atk-ip-input');
+                if (targetInput && event.data.target) targetInput.value = event.data.target;
+                if (atkIpInput && event.data.atkIp) atkIpInput.value = event.data.atkIp;
+            }
+            if (event.data && event.data.type === 'cyber_theme_update') {
+                const t = event.data.theme;
+                document.body.classList.remove('theme-dark', 'theme-white');
+                if (t === 'dark' || t === 'white') document.body.classList.add('theme-' + t);
+                // Update all live xterm instances to match
+                const termTheme = (t === 'dark') ? { background: '#000000', foreground: '#d0d0d0' }
+                    : (t === 'white') ? { background: '#1e1e1e', foreground: '#e0e0e0' }
+                    : { background: 'rgba(10, 10, 10, 0.75)', foreground: '#39ff14' };
+                Object.values(tabs).forEach(entry => {
+                    if (entry && entry.term) entry.term.options.theme = termTheme;
+                });
+            }
+        });
+
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('new-tab-btn').addEventListener('click', () => createNewTab(false));
+            
+            // MODIFIED: Open modal logic to populate the new path selector
+            const openNewFileModal = (directory) => {
+                currentCreationDirectory = directory;
+                newFileModal.style.display = 'flex';
+                newFileNameInput.value = '';
+                newFileContentTextarea.value = '';
+                
+                // Dynamically populate the path selector
+                const paths = directory === 'commands' ? commandsPaths : notesPaths;
+                newFilePathSelect.innerHTML = '';
+                
+                if (paths.length === 0) {
+                     newFilePathSelect.innerHTML = `<option value="">-- No paths configured --</option>`;
+                     saveNewFileBtn.disabled = true;
+                } else {
+                    paths.forEach(path => {
+                        const option = document.createElement('option');
+                        option.value = path;
+                        option.textContent = path;
+                        newFilePathSelect.appendChild(option);
+                    });
+                    saveNewFileBtn.disabled = false;
+                }
+            };
+            
+            document.getElementById('new-command-btn').addEventListener('click', () => openNewFileModal('commands'));
+            document.getElementById('new-note-btn').addEventListener('click', () => openNewFileModal('notes'));
+
+            document.getElementById('search-bar').addEventListener('input', (event) => {
+                searchTerminals(event.target.value);
+            });
+            document.getElementById('commands-search-bar').addEventListener('input', (event) => {
+                searchFiles('commands', event.target.value);
+            });
+            document.getElementById('notes-search-bar').addEventListener('input', (event) => {
+                searchFiles('notes', event.target.value);
+            });
+            let resizeTimeout;
+            window.addEventListener('resize', () => {
+                clearTimeout(resizeTimeout);
+                resizeTimeout = setTimeout(() => {
+                    if (typeof quadMode !== 'undefined' && quadMode) {
+                        Object.values(tabs).forEach(t => {
+                            if (t.isUsed || t.tabButton) {
+                                if(t.fitAddon) { try { t.fitAddon.fit(); } catch(e) {} }
+                            }
+                        });
+                    } else if (activeTabId && tabs[activeTabId]) {
+                        try { tabs[activeTabId].fitAddon.fit(); } catch(e) {}
+                    }
+                }, 150);
+            });
+            
+            // MODIFIED: Add currentEditingFile.path to save_file payload
+            saveFileBtn.addEventListener('click', () => {
+                const activeTerminalSocket = tabs[activeTabId].socket;
+                if (activeTerminalSocket && currentEditingFile.name && currentEditingFile.path) {
+                    activeTerminalSocket.emit('save_file', {
+                        filename: currentEditingFile.name,
+                        content: fileContentEditor.value,
+                        directory: currentEditingFile.directory,
+                        path: currentEditingFile.path // NEW: Pass the file's source path
+                    });
+                } else {
+                    alert("Error: No file selected or file path is missing.");
+                }
+            });
+
+            // MODIFIED: Add currentEditingFile.path to run_file payload
+            runFileBtn.addEventListener('click', () => {
+                const activeTerminalSocket = tabs[activeTabId].socket;
+                if (activeTerminalSocket && currentEditingFile.name) {
+                    tabs[activeTabId].isUsed = true;
+                    const targetValue = document.getElementById('global-target-input').value.trim();
+                    const atkIpValue = document.getElementById('global-atk-ip-input').value.trim();
+                    activeTerminalSocket.emit('run_file', {
+                        filename: currentEditingFile.name,
+                        content: fileContentEditor.value,
+                        directory: currentEditingFile.directory,
+                        path: currentEditingFile.path,
+                        target_replacement: targetValue,
+                        atk_ip_replacement: atkIpValue
+                    });
+                } else {
+                    alert("Error: No file selected or file path is missing.");
+                }
+            });
+            
+            closeEditorBtn.addEventListener('click', () => {
+                fileEditorView.classList.add('hidden');
+                if (activeTabId && tabs[activeTabId]) {
+                    tabs[activeTabId].term.focus();
+                }
+            });
+            
+            // MODIFIED: Add newFilePathSelect.value to create_file payload
+            saveNewFileBtn.addEventListener('click', () => {
+                let filename = newFileNameInput.value.trim();
+                const content = newFileContentTextarea.value;
+                const targetPath = newFilePathSelect.value; // NEW: Get selected path
+                
+                if (!targetPath) {
+                    alert('Please select a folder to save the file.');
+                    return;
+                }
+
+                if (filename.length > 0) {
+                    const hasExtension = filename.includes('.');
+                    
+                    if (currentCreationDirectory === 'notes' && !hasExtension) {
+                        filename += '.txt';
+                    } else if (currentCreationDirectory === 'commands' && !hasExtension) {
+                        // Change for Linux convention
+                        filename += '.sh'; 
+                    }
+                }
+                
+                if (filename && currentCreationDirectory && targetPath) {
+                    const activeTerminalSocket = tabs[activeTabId].socket;
+                    if (activeTerminalSocket) {
+                        activeTerminalSocket.emit('create_file', {
+                            filename: filename,
+                            content: content,
+                            directory: currentCreationDirectory,
+                            target_path: targetPath // NEW: Pass the chosen path
+                        });
+                    }
+                } else {
+                    alert('Please enter a file name.');
+                }
+            });
+            
+            cancelNewFileBtn.addEventListener('click', () => {
+                newFileModal.style.display = 'none';
+            });
+
+            // New event listeners for the replace functionality
+            replaceBtn.addEventListener('click', () => {
+                findReplaceContainer.classList.toggle('hidden');
+                findInput.focus();
+            });
+
+            replaceAllBtn.addEventListener('click', () => {
+                const findText = findInput.value;
+                const replaceText = replaceInput.value;
+                const originalContent = fileContentEditor.value;
+
+                // Escape special regex characters in the find text
+                const escapedFindText = findText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                
+                // Create a global regular expression
+                const regex = new RegExp(escapedFindText, 'g');
+
+                // Perform the replacement
+                const newContent = originalContent.replace(regex, replaceText);
+                
+                fileContentEditor.value = newContent;
+                findReplaceContainer.classList.add('hidden');
+            });
+            
+            // NEW: Settings Modal Add Path buttons
+            addCommandPathBtn.addEventListener('click', () => {
+                const newPath = newCommandPathInput.value.trim();
+                if (newPath && !commandsPaths.includes(newPath)) {
+                    commandsPaths.push(newPath);
+                    renderPathsList('commands', commandsPaths);
+                    newCommandPathInput.value = '';
+                }
+            });
+            
+            addNotePathBtn.addEventListener('click', () => {
+                const newPath = newNotePathInput.value.trim();
+                if (newPath && !notesPaths.includes(newPath)) {
+                    notesPaths.push(newPath);
+                    renderPathsList('notes', notesPaths);
+                    newNotePathInput.value = '';
+                }
+            });
+
+            // NEW: Add event listeners for the settings modal
+            settingsBtn.addEventListener('click', () => {
+                settingsModal.style.display = 'flex';
+                // Request the current paths from the server to pre-populate the inputs
+                if (activeTabId && tabs[activeTabId]) {
+                    tabs[activeTabId].socket.emit('get_current_paths');
+                }
+            });
+            
+            cancelSettingsBtn.addEventListener('click', () => {
+                settingsModal.style.display = 'none';
+            });
+            
+            // MODIFIED: Send the full lists of paths instead of single inputs
+            saveSettingsBtn.addEventListener('click', () => {
+                const activeTerminalSocket = tabs[activeTabId].socket;
+                if (activeTerminalSocket) {
+                    // Send the full lists of paths back to the server
+                    activeTerminalSocket.emit('set_paths', {
+                        commands_paths: commandsPaths,
+                        notes_paths: notesPaths
+                    });
+                    settingsModal.style.display = 'none';
+                }
+            });
+
+
+            // Quad View Logic
+            const quadViewBtn = document.getElementById('quad-view-btn');
+            const sidebar = document.querySelector('.sidebar');
+            const fabContainer = document.getElementById('fab-container');
+            const terminalPanesContainer = document.getElementById('terminal-panes');
+            
+            let quadMode = false;
+            let quadTerminalsCount = 4;
+            
+            function updateQuadView() {
+                while (Object.keys(tabs).length < quadTerminalsCount) {
+                    createNewTab(true);
+                }
+                const panes = document.querySelectorAll('.terminal-pane');
+                panes.forEach((pane, index) => {
+                    if (index < quadTerminalsCount) {
+                        pane.classList.add('quad-visible');
+                    } else {
+                        pane.classList.remove('quad-visible');
+                    }
+                });
+                
+                // We're staggering the fits now so the UI doesn't choke and die when you spam 50 terminals
+                setTimeout(() => {
+                    const toFit = Object.values(tabs).slice(0, quadTerminalsCount);
+                    toFit.forEach((t, i) => {
+                        setTimeout(() => {
+                            if(t.fitAddon) { 
+                                try { t.fitAddon.fit(); } catch(e) {} 
+                            }
+                        }, i * 20); // 20ms stagger prevents the thread from freezing like a bitch
+                    });
+                }, 150);
+            }
+
+            let toolbarVisible = false;
+            const fabMainToggle = document.getElementById('fab-main-toggle');
+
+            fabMainToggle.addEventListener('click', () => {
+                toolbarVisible = !toolbarVisible;
+                if (toolbarVisible) {
+                    fabContainer.classList.add('visible');
+                    fabMainToggle.style.transform = 'scale(1.1) rotate(360deg)';
+                } else {
+                    fabContainer.classList.remove('visible');
+                    fabMainToggle.style.transform = 'scale(1) rotate(0deg)';
+                }
+            });
+
+            quadViewBtn.addEventListener('click', () => {
+                quadMode = !quadMode;
+                const mainContent = document.querySelector('.main-content');
+                if (quadMode) {
+                    quadTerminalsCount = 4;
+                    sidebar.classList.add('hidden-sidebar');
+                    fabMainToggle.style.display = 'flex';
+                    toolbarVisible = true;
+                    fabContainer.classList.add('visible');
+                    terminalPanesContainer.classList.add('quad-grid');
+                    fileEditorView.classList.add('hidden-in-quad');
+                    terminalView.classList.add('quad-expanded');
+                    mainContent.classList.add('quad-active');
+                    document.getElementById('main-header').classList.add('hidden');
+                    
+                    updateQuadView();
+                } else {
+                    sidebar.classList.remove('hidden-sidebar');
+                    fabMainToggle.style.display = 'none';
+                    toolbarVisible = false;
+                    fabContainer.classList.remove('visible');
+                    fabMainToggle.style.transform = 'scale(1) rotate(0deg)';
+                    terminalPanesContainer.classList.remove('quad-grid');
+                    fileEditorView.classList.remove('hidden-in-quad');
+                    terminalView.classList.remove('quad-expanded');
+                    mainContent.classList.remove('quad-active');
+                    document.getElementById('main-header').classList.remove('hidden');
+                    
+                    const panes = document.querySelectorAll('.terminal-pane');
+                    panes.forEach(pane => pane.classList.remove('quad-visible'));
+                    
+                    if (activeTabId) activateTab(activeTabId);
+                    setTimeout(() => {
+                        Object.values(tabs).forEach(t => t.fitAddon.fit());
+                    }, 100);
+                }
+            });
+            
+            document.getElementById('fab-add-terminals').addEventListener('click', () => {
+                quadTerminalsCount += 4;
+                updateQuadView();
+                // Enhanced Auto-scroll to the bottom of the terminal panes
+                setTimeout(() => {
+                    const tp = document.getElementById('terminal-panes');
+                    if(tp) tp.scrollTo({ top: tp.scrollHeight, behavior: 'smooth' });
+                }, 300);
+            });
+            
+            document.getElementById('fab-commands').addEventListener('click', () => openNewFileModal('commands'));
+            document.getElementById('fab-notes').addEventListener('click', () => openNewFileModal('notes'));
+
+            function setupHoverPopup(btnId, winId, onShow) {
+                const btn = document.getElementById(btnId);
+                const win = document.getElementById(winId);
+                if (!btn || !win) return;
+                let hideTimeout;
+
+                const showWin = () => {
+                    clearTimeout(hideTimeout);
+                    win.classList.remove('hidden');
+                    win.style.opacity = '0';
+                    win.style.transform = 'translateY(10px) scale(0.95)';
+                    win.style.transition = 'opacity 0.2s, transform 0.2s';
+                    
+                    const btnRect = btn.getBoundingClientRect();
+                    
+                    // Give it a moment to display block before measuring
+                    setTimeout(() => {
+                        const winRect = win.getBoundingClientRect();
+                        let left = btnRect.left + (btnRect.width / 2) - (winRect.width / 2);
+                        let top = btnRect.top - winRect.height - 15;
+                        
+                        if (left < 10) left = 10;
+                        if (left + winRect.width > window.innerWidth - 10) left = window.innerWidth - winRect.width - 10;
+                        if (top < 10) top = btnRect.bottom + 15;
+                        
+                        win.style.left = left + 'px';
+                        win.style.top = top + 'px';
+                        win.style.opacity = '1';
+                        win.style.transform = 'translateY(0) scale(1)';
+                    }, 10);
+                    
+                    if (onShow) onShow();
+                };
+
+                const hideWin = () => {
+                    hideTimeout = setTimeout(() => {
+                        win.style.opacity = '0';
+                        win.style.transform = 'translateY(10px) scale(0.95)';
+                        setTimeout(() => { if(win.style.opacity === '0') win.classList.add('hidden'); }, 200);
+                    }, 300);
+                };
+
+                const isHoverMode = () => document.getElementById('hover-mode-checkbox') && document.getElementById('hover-mode-checkbox').checked;
+
+                btn.addEventListener('mouseenter', () => { if(isHoverMode()) showWin(); });
+                btn.addEventListener('mouseleave', () => { if(isHoverMode()) hideWin(); });
+                win.addEventListener('mouseenter', () => { if(isHoverMode()) clearTimeout(hideTimeout); });
+                win.addEventListener('mouseleave', () => { if(isHoverMode()) hideWin(); });
+                
+                // Allow click to toggle manually if hover mode is off
+                btn.addEventListener('click', () => {
+                    if (!isHoverMode()) {
+                        if (win.classList.contains('hidden')) showWin();
+                        else hideWin();
+                    } else {
+                        showWin();
+                    }
+                });
+            }
+
+            setupHoverPopup('fab-toggle-commands-drag', 'commands-drag-window');
+            setupHoverPopup('fab-toggle-notes-drag', 'notes-drag-window');
+            setupHoverPopup('fab-toggle-target-drag', 'target-drag-window', () => {
+                if (window.parent) window.parent.postMessage({ type: 'request_cyber_target_update' }, '*');
+            });
+            setupHoverPopup('fab-workflow-create', 'workflow-create-window');
+            setupHoverPopup('fab-workflow-exec', 'workflow-exec-window', () => {
+                if (activeTabId && tabs[activeTabId]) tabs[activeTabId].socket.emit('get_workflows');
+            });
+            document.getElementById('fab-streamer-mode').addEventListener('click', () => {
+                document.body.classList.toggle('streamer-mode');
+            });
+            document.getElementById('fab-clear-all').addEventListener('click', () => {
+                Object.values(tabs).forEach(tab => {
+                    tab.isUsed = false;
+                    if (tab.socket) {
+                        tab.socket.emit('terminal_input', { 'command': '\x03' });
+                        setTimeout(() => {
+                            tab.socket.emit('terminal_input', { 'command': 'cls\r' });
+                            tab.term.clear();
+                        }, 100);
+                    }
+                });
+            });
+            document.getElementById('fab-exit-quad').addEventListener('click', () => {
+                document.getElementById('quad-view-btn').click();
+            });
+            const wfDropZone = document.getElementById('wf-drop-zone');
+            const wfItemsList = document.getElementById('wf-items-list');
+            
+            document.getElementById('add-manual-cmd').addEventListener('click', () => {
+                const name = document.getElementById('manual-cmd-name').value.trim();
+                const cmd = document.getElementById('manual-cmd-text').value.trim();
+                if (name && cmd) {
+                    currentWfCmds.push({ filename: name, content: cmd, directory: 'manual', path: '' });
+                    renderWfItemsList();
+                    document.getElementById('manual-cmd-name').value = '';
+                    document.getElementById('manual-cmd-text').value = '';
+                }
+            });
+
+            renderWfItemsList = () => {
+                wfItemsList.innerHTML = '';
+                currentWfCmds.forEach((data, index) => {
+                    const item = document.createElement('div');
+                    item.className = 'text-xs bg-gray-800 p-2 rounded border border-gray-700 flex justify-between items-center gap-2 mb-1 flex-wrap';
+                    
+                    const infoDiv = document.createElement('div');
+                    infoDiv.className = 'flex flex-col flex-grow gap-1 min-w-0';
+                    
+                    const nameWrap = document.createElement('div');
+                    nameWrap.className = 'flex items-center gap-2';
+                    const idxSpan = document.createElement('span');
+                    idxSpan.className = 'text-gray-400 font-bold w-4';
+                    idxSpan.textContent = `${index + 1}.`;
+                    const nameInput = document.createElement('input');
+                    nameInput.type = 'text';
+                    nameInput.value = data.filename;
+                    nameInput.className = 'bg-gray-700 text-white px-1 py-0.5 text-xs rounded border border-gray-600 focus:border-blue-500 outline-none flex-grow';
+                    nameInput.onchange = (e) => { currentWfCmds[index].filename = e.target.value; };
+                    nameWrap.appendChild(idxSpan);
+                    nameWrap.appendChild(nameInput);
+                    
+                    const cmdInput = document.createElement('input');
+                    cmdInput.type = 'text';
+                    cmdInput.value = data.content || '';
+                    cmdInput.placeholder = data.content ? '' : 'File Content (Type to override file)';
+                    cmdInput.className = 'bg-gray-700 text-39ff14 px-1 py-0.5 text-xs rounded border border-gray-600 focus:border-blue-500 outline-none w-full font-mono';
+                    cmdInput.onchange = (e) => { currentWfCmds[index].content = e.target.value; };
+                    
+                    infoDiv.appendChild(nameWrap);
+                    infoDiv.appendChild(cmdInput);
+                    
+                    const controls = document.createElement('div');
+                    controls.className = 'flex flex-col items-center justify-center gap-1 shrink-0';
+
+                    const moveBtns = document.createElement('div');
+                    moveBtns.className = 'flex items-center gap-1';
+
+                    const upBtn = document.createElement('button');
+                    upBtn.className = 'bg-gray-600 hover:bg-gray-500 text-white rounded px-1';
+                    upBtn.textContent = '⬆';
+                    upBtn.disabled = index === 0;
+                    if(index === 0) upBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                    upBtn.onclick = () => {
+                        if (index > 0) {
+                            [currentWfCmds[index - 1], currentWfCmds[index]] = [currentWfCmds[index], currentWfCmds[index - 1]];
+                            renderWfItemsList();
+                        }
+                    };
+
+                    const downBtn = document.createElement('button');
+                    downBtn.className = 'bg-gray-600 hover:bg-gray-500 text-white rounded px-1';
+                    downBtn.textContent = '⬇';
+                    downBtn.disabled = index === currentWfCmds.length - 1;
+                    if(index === currentWfCmds.length - 1) downBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                    downBtn.onclick = () => {
+                        if (index < currentWfCmds.length - 1) {
+                            [currentWfCmds[index + 1], currentWfCmds[index]] = [currentWfCmds[index], currentWfCmds[index + 1]];
+                            renderWfItemsList();
+                        }
+                    };
+
+                    const delBtn = document.createElement('button');
+                    delBtn.className = 'text-red-500 hover:text-red-700 font-bold px-1 text-sm bg-gray-800 border border-red-500 rounded w-full';
+                    delBtn.textContent = '✖';
+                    delBtn.onclick = () => {
+                        currentWfCmds.splice(index, 1);
+                        renderWfItemsList();
+                    };
+                    
+                    moveBtns.appendChild(upBtn);
+                    moveBtns.appendChild(downBtn);
+                    controls.appendChild(moveBtns);
+                    controls.appendChild(delBtn);
+
+                    item.appendChild(infoDiv);
+                    item.appendChild(controls);
+                    wfItemsList.appendChild(item);
+                });
+            };
+
+            wfDropZone.addEventListener('dragover', (e) => e.preventDefault());
+            wfDropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+                if (data.directory !== 'commands') return;
+                currentWfCmds.push(data);
+                renderWfItemsList();
+            });
+
+            document.getElementById('save-wf-btn').onclick = () => {
+                const name = document.getElementById('wf-name-input').value.trim();
+                if (!name || currentWfCmds.length === 0) return;
+                tabs[activeTabId].socket.emit('save_workflow', {name, commands: currentWfCmds});
+                document.getElementById('wf-name-input').value = '';
+                wfItemsList.innerHTML = '';
+                currentWfCmds = [];
+                document.getElementById('workflow-create-window').classList.add('hidden');
+            };
+
+            document.querySelectorAll('.close-drag-window').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.target.closest('.drag-window').classList.add('hidden');
+                    e.target.closest('.drag-window').style.opacity = '0';
+                });
+            });
+
+            document.getElementById('drag-commands-search').addEventListener('input', (e) => {
+                const q = e.target.value.toLowerCase();
+                document.querySelectorAll('#commands-drag-content .draggable-item').forEach(item => {
+                    item.style.display = item.textContent.toLowerCase().includes(q) ? '' : 'none';
+                });
+            });
+            
+            document.getElementById('drag-notes-search').addEventListener('input', (e) => {
+                const q = e.target.value.toLowerCase();
+                document.querySelectorAll('#notes-drag-content .draggable-item').forEach(item => {
+                    item.style.display = item.textContent.toLowerCase().includes(q) ? '' : 'none';
+                });
+            });
+            
+            document.getElementById('drag-wf-search').addEventListener('input', (e) => {
+                const q = e.target.value.toLowerCase();
+                document.querySelectorAll('#wf-exec-list button').forEach(item => {
+                    item.style.display = item.textContent.toLowerCase().includes(q) ? '' : 'none';
+                });
+            });
+
+            // --- Make Windows Draggable like a Boss ---
+            function makeDraggable(el) {
+                let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+                const header = el.querySelector('.drag-window-header');
+                if (header) {
+                    header.onmousedown = dragMouseDown;
+                } else {
+                    el.onmousedown = dragMouseDown;
+                }
+
+                function dragMouseDown(e) {
+                    e = e || window.event;
+                    e.preventDefault();
+                    pos3 = e.clientX;
+                    pos4 = e.clientY;
+                    document.onmouseup = closeDragElement;
+                    document.onmousemove = elementDrag;
+                }
+
+                function elementDrag(e) {
+                    e = e || window.event;
+                    e.preventDefault();
+                    pos1 = pos3 - e.clientX;
+                    pos2 = pos4 - e.clientY;
+                    pos3 = e.clientX;
+                    pos4 = e.clientY;
+                    el.style.top = (el.offsetTop - pos2) + "px";
+                    el.style.left = (el.offsetLeft - pos1) + "px";
+                }
+
+                function closeDragElement() {
+                    document.onmouseup = null;
+                    document.onmousemove = null;
+                }
+            }
+
+            document.querySelectorAll('.drag-window').forEach(win => {
+                makeDraggable(win);
+            });
+
+            // Create the first default tab and fetch files from both directories
+            createNewTab(false);
+            fetchFiles('commands');
+            fetchFiles('notes');
+        });
+
+        /**
+         * Helper to insert text/variables into textareas at the cursor or replace selection.
+         */
+        function insertVar(elementId, varTag) {
+            const el = document.getElementById(elementId);
+            const start = el.selectionStart;
+            const end = el.selectionEnd;
+            const text = el.value;
+            const before = text.substring(0, start);
+            const after = text.substring(end, text.length);
+            el.value = before + varTag + after;
+            el.selectionStart = el.selectionEnd = start + varTag.length;
+            el.focus();
+        }
+    </script>
+</body>
+</html>
