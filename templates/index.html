@@ -1,0 +1,1550 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Umbrella Corporation</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/ansi_up@5.1.0/ansi_up.min.js"></script>
+    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Icon system: self-contained SVG icons (renders on any OS, no emoji font needed) -->
+    <script src="{{ url_for('static', filename='icons.js') }}"></script>
+    <!-- Emoji font fallback for any remaining decorative emoji text -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap" onerror="this.remove()">
+</head>
+<body class="theme-{{ theme }}">
+    <div id="cyber-lock-screen" style="position:fixed;top:0;left:0;width:100%;height:100%;z-index:999999;display:flex;justify-content:center;align-items:center;background:url('/static/background.jpg') no-repeat center center / cover;overflow:hidden;">
+        <div id="door-left" style="position:absolute;top:0;left:0;width:50%;height:100%;background:rgba(5, 15, 25, 0.3) url('/static/logo.svg') center center / 50% auto no-repeat;backdrop-filter:blur(15px);-webkit-backdrop-filter:blur(15px);transition:transform 1.5s cubic-bezier(0.77, 0, 0.175, 1);z-index:1;border-right:2px solid #00ffcc;box-shadow:inset -20px 0 50px rgba(0,0,0,0.5), 0 0 20px rgba(0,255,204,0.3);"></div>
+        <div id="door-right" style="position:absolute;top:0;right:0;width:50%;height:100%;background:rgba(5, 15, 25, 0.3) url('/static/logo.svg') center center / 50% auto no-repeat;backdrop-filter:blur(15px);-webkit-backdrop-filter:blur(15px);transition:transform 1.5s cubic-bezier(0.77, 0, 0.175, 1);z-index:1;border-left:2px solid #00ffcc;box-shadow:inset 20px 0 50px rgba(0,0,0,0.5), 0 0 20px rgba(0,255,204,0.3);"></div>
+        <div id="lock-ui" style="position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;background:rgba(5,5,15,0.85);padding:40px;border:1px solid #00ffcc;border-radius:15px;box-shadow:0 0 50px #00ffcc;backdrop-filter:blur(10px);">
+            <h2 id="lock-title" style="color:#00ffcc;text-shadow:0 0 10px #00ffcc;font-family:monospace;margin-top:0;font-size:2em;">SYSTEM LOCKED</h2>
+            <p id="lock-msg" style="color:#aaa;font-family:monospace;margin-bottom:30px;font-size:1.1em;">Checking security protocols...</p>
+            <div id="pattern-container" style="position:relative;width:300px;height:300px;">
+                <svg id="pattern-lines" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:1;"><path id="pattern-path" d="" fill="none" stroke="#00ffcc" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" style="filter:drop-shadow(0 0 8px #00ffcc);"/></svg>
+                <div class="pattern-grid" style="display:grid;grid-template-columns:repeat(3, 1fr);grid-template-rows:repeat(3, 1fr);width:100%;height:100%;gap:30px;z-index:2;position:relative;">
+                    <div class="pattern-node" data-id="1"></div><div class="pattern-node" data-id="2"></div><div class="pattern-node" data-id="3"></div>
+                    <div class="pattern-node" data-id="4"></div><div class="pattern-node" data-id="5"></div><div class="pattern-node" data-id="6"></div>
+                    <div class="pattern-node" data-id="7"></div><div class="pattern-node" data-id="8"></div><div class="pattern-node" data-id="9"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="toast-container" class="toast-container"></div>
+    <div class="space-background"></div>
+    <div id="right-edge-trigger" style="position: fixed; right: 0; top: 30%; width: 20px; height: 40%; z-index: 105; cursor: w-resize; border-left: 2px dashed #00ffcc; background: rgba(0,255,204,0.1); border-radius: 5px 0 0 5px;" title="Hover to rip open Multi-Terminal"></div>
+    <div class="quick-tools-sidebar">
+        <div id="tool-kali" class="tool-icon" onclick="toggleToolTerminal('kali')" title="Kali Linux"><i data-icon="dragon" data-size="26"></i></div>
+        <div id="tool-sherlock" class="tool-icon" onclick="toggleToolTerminal('sherlock')" title="Sherlock OSINT"><i data-icon="spy" data-size="26"></i></div>
+        <div id="tool-blockchain" class="tool-icon" onclick="toggleToolTerminal('blockchain')" title="Blockchain Command"><i data-icon="link" data-size="26"></i></div>
+        <div id="tool-msfconsole" class="tool-icon" onclick="toggleToolTerminal('msfconsole')" title="Metasploit Framework"><i data-icon="skull" data-size="26"></i></div>
+        <div id="tool-openvpn" class="tool-icon" onclick="openOpenVPNModal()" title="Advanced OpenVPN Manager"><i data-icon="shield" data-size="26"></i></div>
+        <div id="tool-tunnel" class="tool-icon" onclick="openTunnelModal()" title="Tunnel Manager"><i data-icon="tunnel" data-size="26"></i></div>
+        <div id="tool-ssh" class="tool-icon" onclick="openSshModal()" title="SSH Connection"><i data-icon="plug" data-size="26"></i></div>
+    </div>
+    <div class="sidebar">
+        <div style="display: flex; gap: 5px; margin-bottom: 20px; border-bottom: 2px solid #333;">
+            <button id="main-tab-btn-bugbounty" onclick="switchMainTab('bugbounty')" style="flex:1; padding: 10px; background: none; border: none; color: #fff; cursor: pointer; font-weight: bold; font-family: monospace;">BUG</button>
+            <button id="main-tab-btn-wifi" onclick="switchMainTab('wifi')" style="flex:1; padding: 10px; background: none; border: none; color: #fff; cursor: pointer; font-weight: bold; font-family: monospace;">WIFI</button>
+            <button id="main-tab-btn-person" onclick="switchMainTab('person')" style="flex:1; padding: 10px; background: none; border: none; color: #fff; cursor: pointer; font-weight: bold; font-family: monospace;">PERSON</button>
+        </div>
+        <h2 id="sidebar-warfare-title" style="color:#ff00ff; font-size:1.2em; letter-spacing:2px; text-align: left;">BUG BOUNTY</h2>
+        <input type="text" id="target-search" placeholder="Search targets..." class="search-input" onkeyup="filterTargets()">
+        <button id="new-folder-btn">+ Create New Target</button>
+        <button id="new-wifi-sidebar-btn" onclick="document.getElementById('new-wifi-modal').style.display='block'" style="display:none; width: 100%; padding: 10px; background: transparent; border: 1px solid #ff00ff; color: #ff00ff; cursor: pointer; margin-bottom: 15px; transition: 0.3s;">+ Create WiFi Target</button>
+        <button id="new-person-sidebar-btn" onclick="document.getElementById('new-person-modal').style.display='block'" style="display:none; width: 100%; padding: 10px; background: transparent; border: 1px solid #00ccff; color: #00ccff; cursor: pointer; margin-bottom: 15px; transition: 0.3s;">+ Create Person Target</button>
+        <ul id="folder-list">
+            {% for target, info in structure.items() %}
+                <li class="target-container" data-target-type="{{ info.type }}">
+                    <div class="folder-item" ondblclick="toggleSubdomains('{{ target }}')" onclick="selectFolder('{{ target }}', this)" ondragover="event.preventDefault(); this.classList.add('drag-over');" ondragleave="this.classList.remove('drag-over');" ondrop="this.classList.remove('drag-over'); dropTargetFlag(event, '{{ target }}', this)">
+                        <div style="display:flex; flex-direction:column; width:100%;">
+                            <div style="display:flex; flex-direction:column; align-items:flex-start; width: 100%;">
+                                <div style="display:flex; align-items:center; word-break: break-all; width: 100%;">
+                                    {% if info.has_favicon %}
+                                    <img src="/target_file/{{ target }}/favicon.png" onerror="faviconFallback(this)" style="width:16px; height:16px; vertical-align:middle; margin-right:5px; border-radius:50%; flex-shrink:0;">
+                                    {% else %}
+                                    <span style="display:inline-block; width:16px; height:16px; border-radius:50%; background:#111; vertical-align:middle; margin-right:5px; border: 1px solid #00ffcc; flex-shrink:0;"></span>
+                                    {% endif %}
+                                    <span style="font-weight:bold; font-size:1.1em; color:#fff;">{{ target }}</span>
+                                    <span id="scan-count-{{ target }}" class="scan-count" style="display:none; margin-left: auto; background: #ffaa00; color: #000; padding: 2px 6px; border-radius: 10px; font-size: 0.8em; font-weight: bold;">0</span>
+                                </div>
+                                <div class="target-actions" style="margin-top: 8px; margin-left: 21px; display:flex; gap:12px; flex-wrap: wrap;">
+                                    <span class="action-icon" title="Delete Target" onclick="event.stopPropagation(); deleteTarget('{{ target }}')"><i data-icon="trash" data-size="16"></i></span>
+                                    <span class="action-icon" title="Edit Full Target" onclick="event.stopPropagation(); openEditTargetModal('{{ target }}', '{{ info.type }}')"><i data-icon="edit" data-size="16"></i></span>
+                                    {% if info.type == 'bugbounty' %}
+                                    <span class="action-icon" title="Add Subdomain" onclick="event.stopPropagation(); openSubdomainModal('{{ target }}')"><i data-icon="globe" data-size="16"></i></span>
+                                    <span class="action-icon" title="Bulk Upload Subdomains" onclick="event.stopPropagation(); openBulkSubdomainModal('{{ target }}')"><i data-icon="folder" data-size="16"></i></span>
+                                    <span class="action-icon" title="Edit Cookie" onclick="event.stopPropagation(); openCookieModal('{{ target }}')"><i data-icon="cookie" data-size="16"></i></span>
+                                    <span class="action-icon" title="Edit IP Address" onclick="event.stopPropagation(); openIpModal('{{ target }}')"><i data-icon="target" data-size="16"></i></span>
+                                    {% elif info.type == 'wifi' %}
+                                    <span class="action-icon" title="Edit IP Address" onclick="event.stopPropagation(); openIpModal('{{ target }}')"><i data-icon="target" data-size="16"></i></span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div class="target-flag-container" style="display:flex; gap:2px; margin-top:2px;">
+                                {% for flag in info.flags %}
+                                    {{ flag | safe }}
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                    <ul id="subs-{{ target }}" class="subdomain-list" style="display:none;">
+                        {% for sub in info.subdomains %}
+                            <li class="folder-item sub-item" onclick="selectFolder('{{ target }}/subdomains/{{ sub.name }}', this)" ondragover="event.preventDefault(); this.classList.add('drag-over');" ondragleave="this.classList.remove('drag-over');" ondrop="this.classList.remove('drag-over'); dropTargetFlag(event, '{{ target }}/subdomains/{{ sub.name }}', this)">
+                                <div style="display:flex; flex-direction:column; width:100%;">
+                                    <div style="display:flex; align-items:center;">
+                                        {% if sub.has_favicon %}
+                                        <img src="/target_file/{{ target }}/subdomains/{{ sub.name }}/favicon.png" onerror="faviconFallback(this)" style="width:16px; height:16px; vertical-align:middle; margin-right:5px; border-radius:50%;">
+                                        {% else %}
+                                        <span style="display:inline-block; width:16px; height:16px; border-radius:50%; background:#222; vertical-align:middle; margin-right:5px; border: 1px dashed #00ffcc;"></span>
+                                        {% endif %}
+                                        {{ sub.name }}
+                                    </div>
+                                    <div class="target-flag-container" style="display:flex; gap:2px; margin-top:2px;">
+                                        {% for flag in sub.flags %}
+                                            {{ flag | safe }}
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                </li>
+            {% endfor %}
+        </ul>
+    </div>
+    <div id="sidebar-toggle-btn" onclick="toggleSidebar()" title="Toggle Targets Sidebar"><i data-icon="arrow-left" data-size="24"></i></div>
+    
+    <div class="top-right-bar" id="top-toolbar">
+        <div id="toolbar-toggle-btn" class="top-bar-icon" onclick="toggleToolbar()" title="Toggle Toolbar"><i data-icon="arrow-right" data-size="24"></i></div>
+        <div id="streamer-btn-icon" class="top-bar-icon" onclick="toggleStreamerMode()" title="Streamer Mode (Blur Terminals)"><i data-icon="eye" data-size="24"></i></div>
+        <div id="manage-files-btn" class="top-bar-icon" onclick="openFileMgrModal()" title="Manage Commands/Notes"><i data-icon="file-text" data-size="24"></i></div>
+        <div id="sounds-btn-icon" class="top-bar-icon" onclick="toggleSoundsList()" title="Evil Soundboard"><i data-icon="music" data-size="24"></i></div>
+        <div id="sys-explorer-btn-icon" class="top-bar-icon" onclick="openSysExplorerModal()" title="System File Explorer"><i data-icon="folder-open" data-size="24"></i></div>
+        <div id="download-btn-icon" class="top-bar-icon" onclick="openDownloadModal()" title="Advanced Download Manager"><i data-icon="download" data-size="24"></i></div>
+        
+        <div id="sounds-dropdown" style="display:none; position:absolute; top:70px; right:350px; background:rgba(0,0,0,0.95); border:1px solid #ff00ff; padding:10px; z-index:200; min-width:250px; border-radius:5px; box-shadow: 0 0 20px #ff00ff;">
+            <h3 style="margin-top:0; color:#ff00ff; text-align:center;">🎵 EVIL TRACKS</h3>
+            <ul id="sounds-dropdown-list" style="list-style:none; padding:0; margin:0; max-height:300px; overflow-y:auto;"></ul>
+            <audio id="evil-audio-player" style="display:none;" controls></audio>
+            <button onclick="stopEvilSound()" style="width:100%; padding:8px; margin-top:10px; background:#ff0000; color:#fff; border:none; cursor:pointer; font-weight:bold; border-radius:3px;">STOP AUDIO 🛑</button>
+        </div>
+        <div id="live-editor-btn-icon" class="top-bar-icon" onclick="openLiveEditorModal()" title="Live HTML Injector"><i data-icon="syringe" data-size="24"></i></div>
+        <div id="wormgpt-btn-icon" class="top-bar-icon" onclick="openWormChatModal()" title="WormGPT Chat"><i data-icon="worm" data-size="24"></i></div>
+        <div id="clean-ram-btn-icon" class="top-bar-icon" onclick="cleanRam()" title="Purge RAM (Nuke Memory)"><i data-icon="cpu" data-size="24"></i></div>
+        <div id="clean-tmp-btn-icon" class="top-bar-icon" onclick="cleanTmp()" title="Nuke TMP Folders"><i data-icon="broom" data-size="24"></i></div>
+        <div id="disk-info-btn-icon" class="top-bar-icon" onclick="openDiskModal()" title="Disk Analyzer"><i data-icon="hard-drive" data-size="24"></i></div>
+        <div id="arp-monitor-btn" class="top-bar-icon" title="ARP Monitor (Safe)" onclick="showToast(window.arpStatusData ? window.arpStatusData.details : 'Monitoring...', window.arpStatusData && window.arpStatusData.status === 'attack' ? 'error' : 'success')" style="transition: color 0.3s, text-shadow 0.3s;"><i data-icon="arp" data-size="24"></i></div>
+        <div id="ping-monitor-btn" class="top-bar-icon" title="Ping Monitor (Safe)" onclick="showToast(window.pingStatusData ? window.pingStatusData.details : 'Monitoring...', window.pingStatusData && window.pingStatusData.status === 'attack' ? 'error' : 'success')" style="transition: color 0.3s, text-shadow 0.3s;"><i data-icon="activity" data-size="24"></i></div>
+        <div id="chat-btn-icon" class="top-bar-icon" onclick="openChatModal()" title="Global Hacker Chat"><i data-icon="message-square" data-size="24"></i></div>
+        <div id="github-pull-btn" class="top-bar-icon" onclick="pullFromGithub()" title="Pull from GitHub"><i data-icon="github" data-size="24"></i></div>
+        <div id="sync-btn-icon" class="top-bar-icon" onclick="openSyncModal()" title="LAN Sync" style="position:relative;"><i data-icon="refresh" data-size="24"></i><span id="sync-indicator" style="display:none; position:absolute; top:0; right:0; width:10px; height:10px; background:#00ff00; border-radius:50%; box-shadow:0 0 10px #00ff00;"></span></div>
+        <div id="canvas-btn-icon" class="top-bar-icon" onclick="openCanvasModal()" title="Canvas Workflow"><i data-icon="shuffle" data-size="24"></i></div>
+        <div id="multi-term-btn-icon" class="top-bar-icon" onclick="openMultiTerminalModal()"><i data-icon="terminal" data-size="24"></i></div>
+        <div id="view-toggle-btn" class="top-bar-icon" onclick="toggleGraphView()"><i data-icon="network" data-size="24"></i></div>
+        <div id="app-launcher-btn-icon" class="top-bar-icon" onclick="openAppLauncherModal()" title="App Launcher"><i data-icon="box" data-size="24"></i></div>
+        <div id="quad-term-btn-icon" class="top-bar-icon" onclick="openQuadTermModal()" title="Quad Web Terminal"><i data-icon="monitor" data-size="24"></i></div>
+        <div id="plugins-btn-icon" class="top-bar-icon" onclick="openPluginsModal()"><i data-icon="wrench" data-size="24"></i></div>
+        <div id="add-btn-icon" class="top-bar-icon" onclick="openAddCommandModal()"><i data-icon="plus" data-size="24"></i></div>
+        <div id="settings-btn-icon" class="top-bar-icon" onclick="openSettingsModal()" title="Settings"><i data-icon="settings" data-size="24"></i></div>
+        <div id="icon-mgr-btn-icon" class="top-bar-icon" onclick="openIconManagerModal()" title="Icon Manager"><i data-icon="image" data-size="24"></i></div>
+        <div id="youtube-btn-icon" class="top-bar-icon" onclick="openYouTubeModal()" title="YouTube Viewer"><i data-icon="youtube" data-size="24"></i></div>
+        <div id="map-btn-icon" class="top-bar-icon" onclick="openMapModal()" title="Global Cyber Map"><i data-icon="map" data-size="24"></i></div>
+        <div id="preview-btn-icon" class="top-bar-icon" onclick="openPreviewModal()" title="Web Previewer"><i data-icon="globe" data-size="24"></i></div>
+        <div id="scanlan-btn-icon" class="top-bar-icon" onclick="openScanLanModal()" title="Advanced LAN Scanner"><i data-icon="radio" data-size="24"></i></div>
+        <div id="host-browser-btn-icon" class="top-bar-icon" onclick="openHostBrowserModal()" title="Launch Host Browser"><i data-icon="browser" data-size="24"></i></div>
+        <div id="oneliner-btn-icon" class="top-bar-icon" onclick="openOneLinerModal()" title="One-Liner Generator"><i data-icon="code" data-size="24"></i></div>
+    </div>
+    <div id="sys-monitor" class="sys-monitor" title="Server Resources">
+        <div>CPU: <span id="sys-cpu">0</span>%</div>
+        <div>RAM: <span id="sys-ram">0</span>%</div>
+        <div>HDD: <span id="sys-disk">0</span>%</div>
+    </div>
+    <div id="graph-container" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; z-index:9990; background-color:#050510;">
+        <div class="graph-controls">
+            <button class="graph-ctrl-btn" onclick="toggleGraphView()" title="Exit Graph"><i data-icon="x" data-size="16" data-icon-inline></i> Exit</button>
+            <button id="btn-graph-expand" class="graph-ctrl-btn" onclick="toggleGraphExpansion()" title="Toggle Categories & Scans"><i data-icon="pie-chart" data-size="16"></i> Expand</button>
+            <button id="btn-graph-obsidian" class="graph-ctrl-btn" onclick="toggleObsidianMode()" title="Toggle Obsidian Style"><i data-icon="moon" data-size="16"></i> Obsidian</button>
+            <button id="btn-graph-hierarchical" class="graph-ctrl-btn" onclick="toggleHierarchicalMode()" title="Toggle Hierarchical Layout"><i data-icon="git-branch" data-size="16"></i> Tree View</button>
+            <button id="btn-graph-netmap" class="graph-ctrl-btn" onclick="toggleNetmapMode()" title="Toggle 2D Netmap"><i data-icon="network" data-size="16"></i> 2D Nodes</button>
+            <button id="btn-graph-space" class="graph-ctrl-btn" onclick="toggleSpaceMode()" title="Toggle 3D Space View"><i data-icon="saturn" data-size="16"></i> 3D</button>
+        </div>
+        <div id="graph-view" style="width:100%; height:100%; position:absolute; top:0; left:0; z-index:80;"></div>
+        <div id="graph-3d-view" style="width:100%; height:100%; position:absolute; top:0; left:0; z-index:85; display:none;"></div>
+        <div id="d3-netmap-container" style="display:none; width:100%; height:100%; position:absolute; top:0; left:0; z-index:82; overflow:hidden; background: radial-gradient(circle at center, #001a00 0%, #000 100%); cursor:grab;">
+            <div id="d3-map-layer" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform-origin: 0 0;">
+                <svg id="d3-connections" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible;"></svg>
+                <div id="d3-nodes-container" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"></div>
+            </div>
+        </div>
+        <div id="graph-context-menu" class="ctx-menu" style="display:none; position:absolute; z-index:100;">
+            <div class="ctx-menu-item" id="ctx-instant-run"><i data-icon="zap" data-size="16"></i> Instant Run</div>
+            <div class="ctx-menu-item" id="ctx-live-term"><i data-icon="monitor" data-size="16"></i> Live Terminal</div>
+            <div class="ctx-menu-item" id="ctx-interactive"><i data-icon="laptop" data-size="16"></i> Interactive Terminal</div>
+            <div class="ctx-menu-item" id="ctx-result"><i data-icon="eye" data-size="16"></i> Show Result</div>
+        </div>
+    </div>
+
+    <div id="flag-container" style="position: fixed; left: 300px; top: 50%; transform: translateY(-50%); z-index: 100; display: flex; flex-direction: column; gap: 10px; background: rgba(0,0,0,0.8); padding: 10px 5px; border: 1px solid #00ffcc; border-radius: 0 5px 5px 0; border-left: none;">
+        <div class="draggable-flag" draggable="true" data-flag="<svg width='18' height='18' viewBox='0 0 24 24' fill='#ff0000' stroke='#ff0000' stroke-width='2' style='vertical-align:middle; filter:drop-shadow(0 0 5px #ff0000); margin-right:5px;'><path d='M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z'></path><line x1='4' y1='22' x2='4' y2='15'></line></svg>" title="Critical" style="cursor: grab; transition: transform 0.2s;" ondragstart="dragFlag(event)" onmouseover="this.style.transform='scale(1.3)'" onmouseout="this.style.transform='scale(1)'">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="#ff0000" stroke="#ff0000" stroke-width="2" style="filter:drop-shadow(0 0 5px #ff0000);"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></svg>
+        </div>
+        <div class="draggable-flag" draggable="true" data-flag="<svg width='18' height='18' viewBox='0 0 24 24' fill='#ff8800' stroke='#ff8800' stroke-width='2' style='vertical-align:middle; filter:drop-shadow(0 0 5px #ff8800); margin-right:5px;'><path d='M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z'></path><line x1='4' y1='22' x2='4' y2='15'></line></svg>" title="High" style="cursor: grab; transition: transform 0.2s;" ondragstart="dragFlag(event)" onmouseover="this.style.transform='scale(1.3)'" onmouseout="this.style.transform='scale(1)'">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="#ff8800" stroke="#ff8800" stroke-width="2" style="filter:drop-shadow(0 0 5px #ff8800);"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></svg>
+        </div>
+        <div class="draggable-flag" draggable="true" data-flag="<svg width='18' height='18' viewBox='0 0 24 24' fill='#ffff00' stroke='#ffff00' stroke-width='2' style='vertical-align:middle; filter:drop-shadow(0 0 5px #ffff00); margin-right:5px;'><path d='M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z'></path><line x1='4' y1='22' x2='4' y2='15'></line></svg>" title="Medium" style="cursor: grab; transition: transform 0.2s;" ondragstart="dragFlag(event)" onmouseover="this.style.transform='scale(1.3)'" onmouseout="this.style.transform='scale(1)'">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="#ffff00" stroke="#ffff00" stroke-width="2" style="filter:drop-shadow(0 0 5px #ffff00);"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></svg>
+        </div>
+        <div class="draggable-flag" draggable="true" data-flag="<svg width='18' height='18' viewBox='0 0 24 24' fill='#00ccff' stroke='#00ccff' stroke-width='2' style='vertical-align:middle; filter:drop-shadow(0 0 5px #00ccff); margin-right:5px;'><path d='M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z'></path><line x1='4' y1='22' x2='4' y2='15'></line></svg>" title="Low" style="cursor: grab; transition: transform 0.2s;" ondragstart="dragFlag(event)" onmouseover="this.style.transform='scale(1.3)'" onmouseout="this.style.transform='scale(1)'">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="#00ccff" stroke="#00ccff" stroke-width="2" style="filter:drop-shadow(0 0 5px #00ccff);"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></svg>
+        </div>
+        <div class="draggable-flag" draggable="true" data-flag="" title="Remove Flag" style="cursor: grab; font-size: 1.5em; text-align:center; transition: transform 0.2s;" ondragstart="dragFlag(event)" onmouseover="this.style.transform='scale(1.3)'" onmouseout="this.style.transform='scale(1)'">✖️</div>
+    </div>
+
+    <div class="main-content">
+        <h1 class="title-glow" id="main-title">UMBRELLA CORPORATION</h1>
+        <div class="status-bar">Active Target: <span id="active-folder">None</span></div>
+        
+        <div id="tab-content-bugbounty">
+            <div class="search-container">
+            <div style="display: flex; gap: 10px; margin-bottom: 20px; align-items: center;">
+                <input type="text" id="button-search" placeholder="Search commands, tags, or categories..." class="search-input" onkeyup="filterButtons()" style="flex: 1; margin-bottom: 0;">
+                <div style="display: flex; gap: 5px; height: 42px;">
+                    <button id="global-proto-http" onclick="setGlobalProtocol('http://')" style="background: #111; color: #00ffcc; border: 1px solid #00ffcc; cursor: pointer; font-weight: bold; border-radius: 5px; padding: 0 10px;">HTTP</button>
+                    <button id="global-proto-https" onclick="setGlobalProtocol('https://')" style="background: #00ffcc; color: #000; border: none; cursor: pointer; font-weight: bold; border-radius: 5px; padding: 0 10px;">HTTPS</button>
+                </div>
+                <select id="filter-flag" class="search-input" style="width: auto; margin-bottom: 0;" onchange="filterButtons()">
+                    <option value="all">All Flags</option>
+                    <option value="critical">Critical</option>
+                    <option value="high">High</option>
+                    <option value="medium">Medium</option>
+                    <option value="low">Low</option>
+                </select>
+                <select id="filter-status" class="search-input" style="width: auto; margin-bottom: 0;" onchange="filterButtons()">
+                    <option value="all">All Status</option>
+                    <option value="completed">Completed</option>
+                    <option value="unstarted">Unstarted</option>
+                    <option value="running">In Progress</option>
+                </select>
+                <div id="view-toggles" style="display: flex; gap: 5px; background: #111; padding: 5px 10px; border: 1px solid #555; border-radius: 5px; height: 42px; align-items: center;">
+                    <span class="view-icon" title="Normal View" onclick="setViewMode('normal')"><i data-icon="grid" data-size="20"></i></span>
+                    <span class="view-icon" title="List View" onclick="setViewMode('list')"><i data-icon="list" data-size="20"></i></span>
+                    <span class="view-icon active-view" title="Gallery View" onclick="setViewMode('gallery')"><i data-icon="image" data-size="20"></i></span>
+                    <span class="view-icon" title="Kanban View" onclick="setViewMode('kanban')"><i data-icon="kanban" data-size="20"></i></span>
+                </div>
+            </div>
+            <div class="scan-options" id="scan-options-container">
+                <!-- Dynamically populated buttons -->
+            </div>
+        </div>
+
+        <div id="tab-content-wifi" style="display:none;">
+            <div class="search-container">
+                <h2 style="color:#00ffcc;">WIRELESS OPERATIONS</h2>
+                <p style="color:#aaa;">Run specialized WIFI attacks and monitoring commands against the active scope.</p>
+                <div class="scan-options">
+                    <!-- We reuse the filtered container logic from script.js, buttons move here automatically when mode changes -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="selection-box" style="display:none; position:fixed; border: 1px dashed #00ffcc; background: rgba(0,255,204,0.2); z-index: 9999; pointer-events: none;"></div>
+    <div id="bottom-toolbar" class="bottom-toolbar">
+        <div id="bottom-toggle-btn" class="bottom-bar-icon" onclick="toggleBottomToolbar()" title="Toggle Bottom Toolbar"><i data-icon="arrow-right" data-size="24"></i></div>
+        <button id="bulk-edit-btn" class="bottom-bar-icon" title="Bulk Edit Selected" style="display:none;" onclick="openBulkEditModal()"><i data-icon="edit" data-size="24"></i></button>
+        <button id="ghost-run-btn" class="bottom-bar-icon" title="Ghost Run Interactive" style="display:none; color: #aa00ff;" onclick="runGhostInteractiveSelected()"><i data-icon="rocket" data-size="24"></i></button>
+        <button id="run-btn" class="bottom-bar-icon run-icon-btn" title="INITIALIZE SCAN"><i data-icon="rocket" data-size="24"></i></button>
+    </div>
+
+    <div id="right-toolbar" class="right-toolbar">
+    </div>
+
+    <div id="popup-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="popup-title">Scan Results</h2>
+                <span id="wormgpt-analyze-btn" title="Analyze with WormGPT (Suggest Next Cmd)" style="cursor:pointer; font-size:1.5em; vertical-align:middle; margin-right:10px;" onclick="analyzeWithWormGPT()">🪱</span>
+                <span id="gemini-analyze-btn" title="Analyze/Regenerate with Gemini" style="cursor:pointer; font-size:1.5em; vertical-align:middle; margin-right:10px;" onclick="analyzeWithGemini()">🤖</span>
+                <span class="close" onclick="closeModal('popup-modal')">&times;</span>
+            </div>
+            <span id="gemini-toggle-btn" title="Toggle AI Report" style="cursor:pointer; font-size:1.5em; vertical-align:middle; display:none;" onclick="toggleGeminiReport()">📖</span>
+            <div id="gemini-report" class="markdown-body" dir="rtl" style="display:none; margin: 15px 0; padding: 15px; border: 1px dashed #ff00ff; background: rgba(255, 0, 255, 0.1); text-align: right;"></div>
+            <input type="text" id="result-search-box" placeholder="Search for words in result..." class="search-input" onkeyup="searchResultLines()" style="margin-top: 10px; margin-bottom: 10px;">
+            <div id="popup-text" class="markdown-body"></div>
+        </div>
+    </div>
+
+    <div id="new-folder-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Create New Target</h2>
+                <span class="close" onclick="closeModal('new-folder-modal')">&times;</span>
+            </div>
+            <input type="text" id="new-target-name" placeholder="Target Domain/Name" class="search-input"><br>
+            <input type="text" id="new-target-ip" placeholder="Target IP Address" class="search-input"><br>
+            <button id="save-target-btn" onclick="saveNewFolder(false)" style="padding: 10px 20px; background: #00ffcc; color: #000; border: none; cursor: pointer; font-weight: bold; width: 100%;">Create Target</button>
+        </div>
+    </div>
+
+    <div id="new-wifi-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 style="color:#ff00ff; margin:0;">Create WiFi Target 📶</h2>
+                <span class="close" onclick="closeModal('new-wifi-modal')">&times;</span>
+            </div>
+            <input type="text" id="new-wifi-name" placeholder="Folder Name (e.g. Starbucks_Free)" class="search-input"><br>
+            <input type="text" id="new-wifi-dummy-ip" placeholder="Reference IP (Optional)" class="search-input"><br>
+            <input type="text" id="new-wifi-ssid" placeholder="SSID" class="search-input"><br>
+            <input type="text" id="new-wifi-bssid" placeholder="BSSID (MAC Address)" class="search-input"><br>
+            <input type="number" id="new-wifi-channel" placeholder="Channel (1-165)" class="search-input"><br>
+            <button onclick="saveNewFolder(true, false)" style="padding: 10px 20px; background: #ff00ff; color: #000; border: none; cursor: pointer; font-weight: bold; width: 100%;">Create WiFi Folder</button>
+        </div>
+    </div>
+
+    <div id="new-person-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 style="color:#00ccff; margin:0;">Create Person Target 👤</h2>
+                <span class="close" onclick="closeModal('new-person-modal')">&times;</span>
+            </div>
+            <input type="text" id="new-person-name" placeholder="Unique Folder Name (e.g. Target_John_Doe)" class="search-input"><br>
+            <h4 style="color:#aaa; margin-bottom:10px;">Target Metadata (Optional)</h4>
+            <input type="text" id="person-meta-name" placeholder="Full Name" class="search-input"><br>
+            <input type="email" id="person-meta-email" placeholder="Email Address" class="search-input"><br>
+            <input type="text" id="person-meta-phone" placeholder="Phone Number" class="search-input"><br>
+            <input type="text" id="person-meta-location" placeholder="Physical Location" class="search-input"><br>
+            <input type="text" id="person-meta-username" placeholder="Primary Username" class="search-input"><br>
+            <button onclick="saveNewFolder(false, true)" style="padding: 10px 20px; background: #00ccff; color: #000; border: none; cursor: pointer; font-weight: bold; width: 100%;">Create Person Folder</button>
+        </div>
+    </div>
+
+    <div id="edit-target-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Edit Target Info 💀</h2>
+                <span class="close" onclick="closeModal('edit-target-modal')">&times;</span>
+            </div>
+            <input type="hidden" id="edit-target-name-hidden">
+            <input type="hidden" id="edit-target-type-hidden">
+            <div id="edit-target-fields" style="display:flex; flex-direction:column; gap:10px; margin-bottom:15px;"></div>
+            <button onclick="saveEditedTarget()" style="padding: 10px 20px; background: #00ffcc; color: #000; border: none; cursor: pointer; font-weight: bold; width: 100%;">Save Details</button>
+        </div>
+    </div>
+
+    <div id="icon-manager-modal" class="modal" style="z-index: 2000;">
+        <div class="modal-content" style="width: 80%; max-width: 800px; height: 70vh; display: flex; flex-direction: column;">
+            <div class="modal-header">
+                <h2 style="color:#00ffcc; margin:0;">Icon Manager 🖼️</h2>
+                <span class="close" onclick="closeModal('icon-manager-modal')">&times;</span>
+            </div>
+            <div style="display:flex; gap:10px; margin-bottom:10px;">
+                <input type="text" id="icon-mgr-search" placeholder="Search icons..." class="search-input" style="flex:1; margin-bottom:0;" onkeyup="window.filterIconManager()">
+                <button onclick="document.getElementById('icon-mgr-upload').click()" style="padding:10px; background:#ff00ff; color:#000; border:none; font-weight:bold; cursor:pointer;">UPLOAD NEW ICON</button>
+                <input type="file" id="icon-mgr-upload" style="display:none;" accept="image/*,.svg" onchange="window.uploadIconManagerFile(this)">
+            </div>
+            <div id="icon-mgr-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; overflow-y:auto; flex:1; padding: 10px; background:#000; border:1px solid #333;"></div>
+        </div>
+    </div>
+
+    <div id="bulk-edit-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Bulk Edit Commands 💀</h2>
+                <span class="close" onclick="closeModal('bulk-edit-modal')">&times;</span>
+            </div>
+            <p style="color:#aaa; font-size:0.9em; margin-top:0;">Leave fields empty to keep original values for selected commands.</p>
+            <div style="display:flex; gap:10px; margin-bottom:15px; align-items:center;">
+                <input type="text" id="bulk-cmd-icon" placeholder="Icon URL or Path (leave blank to keep)" class="search-input" style="flex:1; margin-bottom:0;">
+                <button type="button" onclick="window.openIconSelector('bulk-cmd-icon')" style="padding:10px; background:#ff00ff; color:#000; border:none; font-weight:bold; cursor:pointer;">Select Icon</button>
+            </div>
+            <div style="margin-bottom: 15px;">
+                <label style="color: #00ffcc; font-weight: bold; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; margin-right: 15px;">
+                    <select id="bulk-cmd-os-windows" class="search-input" style="width:auto; margin-bottom:0;">
+                        <option value="">-- Windows OS (Keep) --</option>
+                        <option value="true">Enable Windows Icon</option>
+                        <option value="false">Disable Windows Icon</option>
+                    </select>
+                </label>
+                <label style="color: #00ffcc; font-weight: bold; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;">
+                    <select id="bulk-cmd-os-linux" class="search-input" style="width:auto; margin-bottom:0;">
+                        <option value="">-- Linux OS (Keep) --</option>
+                        <option value="true">Enable Linux Icon</option>
+                        <option value="false">Disable Linux Icon</option>
+                    </select>
+                </label>
+            </div>
+            <button onclick="saveBulkEdit()" style="padding: 10px 20px; background: #00ffcc; color: #000; border: none; cursor: pointer; font-weight: bold; width: 100%;">APPLY BULK EDIT</button>
+        </div>
+    </div>
+
+    <div id="cmd-gallery-modal" class="modal" tabindex="-1">
+        <div class="modal-content" style="width: 90%; max-width: 1000px; height: 80vh; display: flex; flex-direction: column; background: #000; border: 2px solid #ff00ff; padding: 0;">
+            <div class="modal-header" style="padding: 10px; background: rgba(255, 0, 255, 0.1); border-bottom: 1px solid #ff00ff; display: flex; justify-content: space-between; align-items: center;">
+                <h3 style="margin: 0; color: #ff00ff;" id="cmd-gallery-title">Command Images</h3>
+                <span class="close" onclick="window.closeCmdGallery()" style="color: #fff;">&times;</span>
+            </div>
+            <div style="flex: 1; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden;" id="cmd-gallery-body" ondragover="event.preventDefault(); this.style.opacity=0.5;" ondragleave="this.style.opacity=1;" ondrop="event.preventDefault(); this.style.opacity=1; window.uploadImageForCmd(window.currentGalleryCmdId, event.dataTransfer.files[0])">
+                <div id="cmd-gallery-empty" style="color: #aaa; font-family: monospace;">No images yet. Drag & Drop or Paste (Ctrl+V) an image here.</div>
+                <img id="cmd-gallery-img" src="" style="max-width: 100%; max-height: 100%; object-fit: contain; display: none;">
+                
+                <button id="cmd-gallery-prev" onclick="window.prevCmdImage()" style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); background: rgba(0,0,0,0.7); color: #00ffcc; border: 1px solid #00ffcc; padding: 15px; cursor: pointer; font-size: 2em; display: none; border-radius: 5px;">&#10094;</button>
+                <button id="cmd-gallery-next" onclick="window.nextCmdImage()" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: rgba(0,0,0,0.7); color: #00ffcc; border: 1px solid #00ffcc; padding: 15px; cursor: pointer; font-size: 2em; display: none; border-radius: 5px;">&#10095;</button>
+            </div>
+            <div style="text-align: center; padding: 10px; background: rgba(0,255,204,0.1); color: #00ffcc; font-family: monospace; border-top: 1px solid #00ffcc;" id="cmd-gallery-counter">
+                0 / 0
+            </div>
+        </div>
+    </div>
+
+    <div id="add-command-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Add/Edit Custom Command</h2>
+                <span class="close" onclick="closeModal('add-command-modal')">&times;</span>
+            </div>
+            <input type="hidden" id="cmd-id">
+            <input type="hidden" id="cmd-type" value="bugbounty">
+            <input type="text" id="cmd-name" placeholder="Button Name" class="search-input"><br>
+            <div style="display:flex; gap:10px; margin-bottom:15px; align-items:center;">
+                <input type="text" id="cmd-icon" placeholder="Icon URL or Path (e.g. /icons/my_icon.png)" class="search-input" style="flex:1; margin-bottom:0;">
+                <button type="button" onclick="window.openIconSelector('cmd-icon')" style="padding:10px; background:#ff00ff; color:#000; border:none; font-weight:bold; cursor:pointer;">Select Icon</button>
+            </div>
+            <input type="text" id="cmd-category" placeholder="Category (e.g. Recon, Exploit)" class="search-input"><br>
+            <input type="number" id="cmd-order-num" placeholder="Order Number (optional)" class="search-input"><br>
+            <div id="tags-container" style="display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 5px;"></div>
+            <input type="text" id="cmd-tags-input" placeholder="Type tag and press Enter" class="search-input" onkeypress="handleTagInput(event)"><br>
+            <div style="display: flex; gap: 10px; position: relative;">
+                <input type="text" id="cmd-command" placeholder="Command (use {target} for IP/Domain)" class="search-input" style="margin-bottom: 0;">
+                <button type="button" onclick="toggleCmdFileBox()" style="padding: 10px; background: #00ffcc; color: #000; border: none; cursor: pointer; font-weight: bold; border-radius: 4px;" title="Load from Command Files">📂</button>
+                <div id="cmd-file-box" style="display: none; position: absolute; top: 100%; right: 0; z-index: 200; background: #111; border: 1px solid #00ffcc; max-height: 200px; overflow-y: auto; width: 300px; box-shadow: 0 5px 15px rgba(0,255,204,0.4);">
+                    <input type="text" id="cmd-file-box-search" placeholder="Search commands..." class="search-input" style="padding: 5px; margin: 5px; width: calc(100% - 10px); box-sizing: border-box;" onkeyup="filterCmdFileBox()">
+                    <ul id="cmd-file-box-list" style="list-style: none; padding: 0; margin: 0;"></ul>
+                </div>
+            </div>
+            <div style="margin-top: 10px;">
+                <input type="text" id="macro-search" placeholder="Search macros..." class="search-input" onkeyup="filterCmdMacros()" style="margin-bottom: 5px; padding: 5px;">
+                <div id="cmd-macro-buttons" style="display: flex; gap: 5px; flex-wrap: wrap; max-height: 100px; overflow-y: auto;">
+                    <button class="macro-btn" data-mac="{target}" onclick="insertMacro('{target}')" style="padding: 5px 10px; background: #00ffcc; color: #000; border: none; cursor: pointer; font-weight: bold;">{target}</button>
+                    <button class="macro-btn" data-mac="{ip}" onclick="insertMacro('{ip}')" style="padding: 5px 10px; background: #ff00ff; color: #000; border: none; cursor: pointer; font-weight: bold;">{ip}</button>
+                    <button class="macro-btn" data-mac="{attacker-ip}" onclick="insertMacro('{attacker-ip}')" style="padding: 5px 10px; background: #ffaa00; color: #000; border: none; cursor: pointer; font-weight: bold;">{atk-ip}</button>
+                    <button class="macro-btn" data-mac="{attacker-url}" onclick="insertMacro('{attacker-url}')" style="padding: 5px 10px; background: #00ccff; color: #000; border: none; cursor: pointer; font-weight: bold;">{atk-url}</button>
+                    <button class="macro-btn" data-mac="{require}" onclick="openRequireModal()" style="padding: 5px 10px; background: #ff0000; color: #000; border: none; cursor: pointer; font-weight: bold;">{require}</button>
+                    <button class="macro-btn" data-mac="{cookie}" onclick="insertMacro('{cookie}')" style="padding: 5px 10px; background: #ffaa00; color: #000; border: none; cursor: pointer; font-weight: bold;">{cookie}</button>
+                    <button class="macro-btn" data-mac="{username}" onclick="insertMacro('{username}')" style="padding: 5px 10px; background: #ffff00; color: #000; border: none; cursor: pointer; font-weight: bold;">{username}</button>
+                    <button class="macro-btn" data-mac="{telnet-login-name}" onclick="insertMacro('{telnet-login-name}')" style="padding: 5px 10px; background: #ffff00; color: #000; border: none; cursor: pointer; font-weight: bold;">{telnet-login-name}</button>
+                    <button class="macro-btn" data-mac="{script}" onclick="openScriptModal()" style="padding: 5px 10px; background: #00ccff; color: #000; border: none; cursor: pointer; font-weight: bold;">{script}</button>
+                    <button class="macro-btn" data-mac="{passwordlist}" onclick="openPasswordlistModal()" style="padding: 5px 10px; background: #ffaa00; color: #000; border: none; cursor: pointer; font-weight: bold;">{passwordlist}</button>
+                    <button class="macro-btn" data-mac="{payloadslist}" onclick="openPayloadslistModal()" style="padding: 5px 10px; background: #ff00ff; color: #000; border: none; cursor: pointer; font-weight: bold;">{payloadslist}</button>
+                    <button class="macro-btn" data-mac="{payloads}" onclick="openPayloadsModal()" style="padding: 5px 10px; background: #00ccff; color: #000; border: none; cursor: pointer; font-weight: bold;">{payloads}</button>
+                    <button class="macro-btn" data-mac="{saveinpathpayloads}" onclick="window.openPayloadFilenameModal()" style="padding: 5px 10px; background: #ffaa00; color: #000; border: none; cursor: pointer; font-weight: bold;">{saveinpathpayloads}</button>
+                    <button class="macro-btn" data-mac="{http-or-https}" onclick="insertMacro('{http-or-https}')" style="padding: 5px 10px; background: #00ffcc; color: #000; border: none; cursor: pointer; font-weight: bold;">{http-or-https}</button>
+                    <button class="macro-btn" data-mac="{SSID}" onclick="insertMacro('{SSID}')" style="padding: 5px 10px; background: #ff00ff; color: #000; border: none; cursor: pointer; font-weight: bold;">{SSID}</button>
+                    <button class="macro-btn" data-mac="{BSSID}" onclick="insertMacro('{BSSID}')" style="padding: 5px 10px; background: #ff00ff; color: #000; border: none; cursor: pointer; font-weight: bold;">{BSSID}</button>
+                    <button class="macro-btn" data-mac="{channel}" onclick="insertMacro('{channel}')" style="padding: 5px 10px; background: #ff00ff; color: #000; border: none; cursor: pointer; font-weight: bold;">{channel}</button>
+                    <button class="macro-btn" data-mac="{person-name}" onclick="insertMacro('{person-name}')" style="padding: 5px 10px; background: #00ccff; color: #000; border: none; cursor: pointer; font-weight: bold;">{person-name}</button>
+                    <button class="macro-btn" data-mac="{email}" onclick="insertMacro('{email}')" style="padding: 5px 10px; background: #00ccff; color: #000; border: none; cursor: pointer; font-weight: bold;">{email}</button>
+                    <button class="macro-btn" data-mac="{phone-number}" onclick="insertMacro('{phone-number}')" style="padding: 5px 10px; background: #00ccff; color: #000; border: none; cursor: pointer; font-weight: bold;">{phone-number}</button>
+                    <button class="macro-btn" data-mac="{location}" onclick="insertMacro('{location}')" style="padding: 5px 10px; background: #00ccff; color: #000; border: none; cursor: pointer; font-weight: bold;">{location}</button>
+                    <button class="macro-btn" data-mac="{username}" onclick="insertMacro('{username}')" style="padding: 5px 10px; background: #00ccff; color: #000; border: none; cursor: pointer; font-weight: bold;">{username}</button>
+                </div>
+            </div><br>
+            <input type="text" id="cmd-filename" placeholder="Output Filename (e.g., scan.md)" class="search-input"><br>
+            <label style="color: #ff0000; font-weight: bold; cursor: pointer; display: block; margin-bottom: 10px;">
+                <input type="checkbox" id="cmd-high-ram"> ⚠️ High RAM Consumption
+            </label>
+            <div style="margin-bottom: 15px;">
+                <label style="color: #00ffcc; font-weight: bold; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; margin-right: 15px;">
+                    <input type="checkbox" id="cmd-os-windows"> 🪟 Windows
+                </label>
+                <label style="color: #00ffcc; font-weight: bold; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;">
+                    <input type="checkbox" id="cmd-os-linux"> 🐧 Linux
+                </label>
+            </div>
+            <button id="save-cmd-btn" onclick="saveCommand()">Save Button</button>
+        </div>
+    </div>
+
+    <div id="plugins-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 style="margin:0;">Installed Plugins</h2>
+                <span class="close" onclick="closeModal('plugins-modal')">&times;</span>
+            </div>
+            <ul id="plugins-list" style="list-style-type: none; padding: 0;"></ul>
+        </div>
+    </div>
+
+    <div id="cookie-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 style="margin:0;">Target Cookie</h2>
+                <span class="close" onclick="closeModal('cookie-modal')">&times;</span>
+            </div>
+            <input type="hidden" id="cookie-target">
+            <textarea id="cookie-value" class="search-input" rows="4" placeholder="Enter session cookie (e.g., session=12345)"></textarea><br>
+            <button onclick="saveCookie()" style="padding: 10px 20px; background: #ffaa00; color: #000; border: none; cursor: pointer; font-weight: bold; width: 100%;">Save Cookie</button>
+        </div>
+    </div>
+
+    <div id="ip-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 style="margin:0;">Target IP Address</h2>
+                <span class="close" onclick="closeModal('ip-modal')">&times;</span>
+            </div>
+            <input type="hidden" id="ip-target">
+            <input type="text" id="ip-value" class="search-input" placeholder="Enter IP address (e.g. 192.168.1.5)"><br>
+            <button onclick="saveIp()" style="padding: 10px 20px; background: #00ffcc; color: #000; border: none; cursor: pointer; font-weight: bold; width: 100%;">Save IP</button>
+        </div>
+    </div>
+
+    <div id="add-subdomain-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 style="margin:0;">Add Subdomain</h2>
+                <span class="close" onclick="closeModal('add-subdomain-modal')">&times;</span>
+            </div>
+            <input type="text" id="subdomain-name" placeholder="Subdomain (e.g., sub.target.com)" class="search-input"><br>
+            <input type="hidden" id="subdomain-target">
+            <button id="save-cmd-btn" onclick="saveSubdomain()">Save Subdomain</button>
+        </div>
+    </div>
+
+    <div id="require-file-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 style="margin:0;">Select Required File</h2>
+                <span class="close" onclick="closeModal('require-file-modal')">&times;</span>
+            </div>
+            <input type="text" id="require-search" placeholder="Search filenames..." class="search-input" onkeyup="filterRequireFiles()">
+            <ul id="require-file-list" style="list-style-type: none; padding: 0; max-height: 200px; overflow-y: auto;"></ul>
+        </div>
+    </div>
+
+    <div id="script-file-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 style="margin:0;">Select Script</h2>
+                <span class="close" onclick="closeModal('script-file-modal')">&times;</span>
+            </div>
+            <input type="text" id="script-search" placeholder="Search scripts..." class="search-input" onkeyup="filterScripts()">
+            <ul id="script-file-list" style="list-style-type: none; padding: 0; max-height: 200px; overflow-y: auto;"></ul>
+        </div>
+    </div>
+
+    <div id="passwordlist-file-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 style="margin:0;">Select Passwordlist</h2>
+                <span class="close" onclick="closeModal('passwordlist-file-modal')">&times;</span>
+            </div>
+            <input type="text" id="passwordlist-search" placeholder="Search passwordlists..." class="search-input" onkeyup="filterPasswordlists()">
+            <ul id="passwordlist-file-list" style="list-style-type: none; padding: 0; max-height: 200px; overflow-y: auto;"></ul>
+        </div>
+    </div>
+
+    <div id="payloadslist-file-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 style="margin:0;">Select Payloadslist</h2>
+                <span class="close" onclick="closeModal('payloadslist-file-modal')">&times;</span>
+            </div>
+            <input type="text" id="payloadslist-search" placeholder="Search payloads..." class="search-input" onkeyup="filterPayloadslists()">
+            <ul id="payloadslist-file-list" style="list-style-type: none; padding: 0; max-height: 200px; overflow-y: auto;"></ul>
+        </div>
+    </div>
+
+    <div id="payloads-file-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 style="margin:0;">Select Payload File</h2>
+                <span class="close" onclick="closeModal('payloads-file-modal')">&times;</span>
+            </div>
+            <input type="text" id="payloads-search" placeholder="Search payloads folder..." class="search-input" onkeyup="filterPayloads()">
+            <ul id="payloads-file-list" style="list-style-type: none; padding: 0; max-height: 200px; overflow-y: auto;"></ul>
+        </div>
+    </div>
+
+    <div id="download-mgr-modal" class="modal">
+        <div class="modal-content" style="width: 80%; max-width: 1000px; display: flex; flex-direction: row; height: 70vh; padding: 0;">
+            <div style="width: 300px; background: #111; border-right: 1px solid #00ffcc; display: flex; flex-direction: column; padding: 15px;">
+                <h3 style="color:#ff00ff; margin-top:0;">Saved URLs</h3>
+                <input type="text" id="dl-mgr-search" placeholder="Search..." class="search-input" style="margin-bottom:10px; padding:5px;" onkeyup="filterDownloadUrls()">
+                <ul id="dl-mgr-list" style="list-style:none; padding:0; margin:0; flex:1; overflow-y:auto; border:1px solid #333; background:#000;"></ul>
+            </div>
+            <div style="flex:1; display:flex; flex-direction:column; padding: 15px; position:relative;">
+                <div class="modal-header">
+                    <h2 style="margin:0;">Advanced Download Manager 📥</h2>
+                    <span class="close" onclick="closeModal('download-mgr-modal')">&times;</span>
+                </div>
+                <input type="hidden" id="dl-mgr-old-name">
+                <label style="color:#00ffcc;">Display Name:</label>
+                <input type="text" id="dl-mgr-name" placeholder="e.g. My Exploit Script" class="search-input">
+                
+                <label style="color:#00ffcc;">File Name:</label>
+                <input type="text" id="dl-mgr-filename" placeholder="e.g. exploit.py" class="search-input">
+                
+                <label style="color:#00ffcc;">Target URL:</label>
+                <input type="text" id="dl-mgr-url" placeholder="http://..." class="search-input">
+                
+                <label style="color:#00ffcc;">Destination Folder:</label>
+                <select id="dl-mgr-folder" class="search-input">
+                    <option value="scripts">scripts/</option>
+                    <option value="passwordlist">passwordlist/</option>
+                    <option value="payloadslist">payloadslist/</option>
+                    <option value="payloads">payloads/</option>
+                </select>
+                
+                <div style="display:flex; gap:10px; margin-top:10px;">
+                    <button onclick="saveDownloadUrl()" style="flex:1; padding:15px; background:#ffaa00; color:#000; border:none; font-weight:bold; cursor:pointer;">💾 Save to List</button>
+                    <button onclick="executeDownload()" style="flex:2; padding:15px; background:#00ffcc; color:#000; border:none; font-weight:bold; cursor:pointer;">⚡ DOWNLOAD BITCH</button>
+                </div>
+                <div id="dl-mgr-status" style="margin-top: 20px; font-family: monospace; color: #ff00ff; font-weight: bold;"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="bulk-subdomain-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 style="margin:0;">Bulk Add Subdomains</h2>
+                <span class="close" onclick="closeModal('bulk-subdomain-modal')">&times;</span>
+            </div>
+            <p style="color:#aaa; font-size:0.9em;">Select a text file with one subdomain per line. I'll scrape all their favicons autonomously.</p>
+            <input type="file" id="bulk-subdomain-file" accept=".txt" class="search-input"><br>
+            <input type="hidden" id="bulk-subdomain-target">
+            <button id="save-bulk-cmd-btn" onclick="uploadBulkSubdomains()">Upload & Process</button>
+        </div>
+    </div>
+
+    <div id="terminal-modal" class="modal">
+        <div class="modal-content terminal-content" style="width: 80%; max-width: 1000px; display: flex; flex-direction: column;">
+            <div class="modal-header">
+                <h2 style="margin: 0;">Terminal Output</h2>
+                <span class="close" onclick="closeModal('terminal-modal'); stopTerminal();">&times;</span>
+            </div>
+            <div id="terminal-container" style="flex: 1; min-height: 400px; width: 100%; text-align: left; background: #000; padding: 10px; border: 1px solid #00ffcc; box-sizing: border-box;"></div>
+        </div>
+    </div>
+
+    <div id="disk-info-modal" class="modal">
+        <div class="modal-content" style="width: 80%; max-width: 900px;">
+            <span class="close" onclick="closeModal('disk-info-modal')">&times;</span>
+            <h2 style="color: #00ffcc; margin-top:0;">Disk Analyzer & Partitions 💾</h2>
+            <div style="background: #000; border: 1px solid #00ffcc; padding: 10px; height: 400px; overflow-y: auto;">
+                <pre id="disk-info-output" style="color: #00ff00; font-family: monospace; white-space: pre-wrap; margin: 0;">Loading disk stats... Don't rush me, bitch.</pre>
+            </div>
+        </div>
+    </div>
+
+    <div id="settings-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Settings ⚙️</h2>
+                <span class="close" onclick="closeModal('settings-modal')">&times;</span>
+            </div>
+            <div style="display:flex; gap:10px; margin-bottom:15px; flex-wrap:wrap;">
+                <button onclick="switchSettingsTab('general')" id="set-tab-gen" style="flex:1 1 80px; padding:10px; background:#00ffcc; color:#000; border:none; cursor:pointer; font-weight:bold;">General</button>
+                <button onclick="switchSettingsTab('themes')" id="set-tab-thm" style="flex:1 1 80px; padding:10px; background:#111; color:#00ffcc; border:1px solid #00ffcc; cursor:pointer; font-weight:bold;">Themes</button>
+                <button onclick="switchSettingsTab('backgrounds')" id="set-tab-bg" style="flex:1 1 80px; padding:10px; background:#111; color:#00ffcc; border:1px solid #00ffcc; cursor:pointer; font-weight:bold;">Backgrounds</button>
+                <button onclick="switchSettingsTab('myips')" id="set-tab-ips" style="flex:1 1 80px; padding:10px; background:#111; color:#00ffcc; border:1px solid #00ffcc; cursor:pointer; font-weight:bold;">My IPs</button>
+                <button onclick="switchSettingsTab('github')" id="set-tab-git" style="flex:1 1 80px; padding:10px; background:#111; color:#00ffcc; border:1px solid #00ffcc; cursor:pointer; font-weight:bold;">GitHub</button>
+                <button onclick="switchSettingsTab('icons')" id="set-tab-ico" style="flex:1 1 80px; padding:10px; background:#111; color:#00ffcc; border:1px solid #00ffcc; cursor:pointer; font-weight:bold;">Icons</button>
+                <button onclick="switchSettingsTab('osicons')" id="set-tab-osicons" style="flex:1 1 80px; padding:10px; background:#111; color:#00ffcc; border:1px solid #00ffcc; cursor:pointer; font-weight:bold;">OS Icons</button>
+                <button onclick="switchSettingsTab('sounds')" id="set-tab-snd" style="flex:1 1 80px; padding:10px; background:#111; color:#00ffcc; border:1px solid #00ffcc; cursor:pointer; font-weight:bold;">Sounds</button>
+                <button onclick="switchSettingsTab('custom')" id="set-tab-cust" style="flex:1 1 80px; padding:10px; background:#111; color:#00ffcc; border:1px solid #00ffcc; cursor:pointer; font-weight:bold;">Tools</button>
+                <button onclick="switchSettingsTab('paths')" id="set-tab-paths" style="flex:1 1 80px; padding:10px; background:#111; color:#00ffcc; border:1px solid #00ffcc; cursor:pointer; font-weight:bold;">Paths</button>
+                <button onclick="switchSettingsTab('terminal')" id="set-tab-term" style="flex:1 1 80px; padding:10px; background:#111; color:#00ffcc; border:1px solid #00ffcc; cursor:pointer; font-weight:bold;">Terminal</button>
+                <button onclick="switchSettingsTab('security')" id="set-tab-sec" style="flex:1 1 80px; padding:10px; background:#111; color:#00ffcc; border:1px solid #00ffcc; cursor:pointer; font-weight:bold;">Security</button>
+            </div>
+            <div id="settings-general">
+                <label style="color: #ffaa00; font-weight: bold; cursor: pointer; display: block; margin-bottom: 15px; border: 1px dashed #ffaa00; padding: 10px; background: rgba(255,170,0,0.1);">
+                    <input type="checkbox" id="sys-queue-mode"> 🚀 Enable Queue Mode (Sequential Scans)
+                </label>
+                <label style="color: #00ffcc; font-weight: bold; cursor: pointer; display: block; margin-bottom: 15px; border: 1px dashed #00ffcc; padding: 10px; background: rgba(0,255,204,0.1);">
+                    <input type="checkbox" id="sys-box-layout"> 🔲 Enable Full Box UI Layout (Advanced Interactive Floating Boxes)
+                </label>
+                <label style="color: #ff00ff; font-weight: bold; cursor: pointer; display: block; margin-bottom: 15px; border: 1px dashed #ff00ff; padding: 10px; background: rgba(255,0,255,0.1);">
+                    <input type="checkbox" id="sys-camera-sway"> 🎥 Enable Cyberpunk Camera Sway (Realistic Mouse Parallax)
+                </label>
+                <label style="color: #00ffcc;">System Quality (Performance):</label>
+                <select id="sys-quality" class="search-input" style="margin-bottom:10px;">
+                    <option value="potato">🥔 Potato (Fast, No Blur)</option>
+                    <option value="realistic">🌌 Realistic (Glass, Blur, Moving Space)</option>
+                </select><br>
+
+                <label style="color: #00ffcc;">Gemini API Key:</label>
+                <input type="password" id="gemini-api-key" placeholder="Enter API Key..." class="search-input"><br>
+                <label style="color: #00ffcc;">Gemini Model:</label>
+                <select id="gemini-model" class="search-input" style="margin-bottom:10px;">
+                    <option value="gemini-1.5-flash">gemini-3.5-flash (Mapped to 1.5-flash)</option>
+                    <option value="gemini-1.5-pro">gemini-1.5-pro</option>
+                    <option value="gemini-3.1-pro-preview">gemini-3.1-pro-preview</option>
+                    <option value="gemini-3.1-flash-lite">gemini-3.1-flash-lite</option>
+                    <option value="gemini-3-flash-preview">gemini-3-flash-preview</option>
+                </select><br>
+                <label style="color: #ff00ff;">Attacker IP {attacker-ip}:</label>
+                <input type="text" id="attacker-ip" placeholder="e.g. 10.10.14.5" class="search-input"><br>
+                <label style="color: #ff00ff;">Attacker URL {attacker-url}:</label>
+                <input type="text" id="attacker-url" placeholder="e.g. http://10.10.14.5:8000" class="search-input"><br>
+                <label style="color: #ffff00;">Username {username}:</label>
+                <input type="text" id="sys-username" placeholder="e.g. admin" class="search-input"><br>
+                <label style="color: #ffff00;">Telnet Login {telnet-login-name}:</label>
+                <input type="text" id="sys-telnet-login" placeholder="e.g. root" class="search-input" style="margin-bottom:20px;"><br>
+                <button onclick="saveSettings()" style="padding: 10px 20px; background: #00ffcc; color: #000; border: none; cursor: pointer; font-weight: bold; width: 100%;">Save Settings</button>
+                <hr style="border: 1px solid #ff00ff; margin: 20px 0;">
+                <h3 style="color: #ff00ff; margin-top: 0;">Backup & Restore</h3>
+                <div style="display:flex; gap:10px;">
+                    <button onclick="exportSystem()" style="flex:1; padding: 10px; background: #ffaa00; color: #000; border: none; cursor: pointer; font-weight: bold;">📥 Export System (ZIP)</button>
+                    <label style="flex:1; padding: 10px; background: #00ccff; color: #000; border: none; cursor: pointer; font-weight: bold; text-align: center; box-sizing: border-box;">
+                        📤 Import System (ZIP)
+                        <input type="file" id="import-system-file" accept=".zip" style="display:none;" onchange="importSystem()">
+                    </label>
+                </div>
+            </div>
+            <div id="settings-backgrounds" style="display:none; max-height: 400px; overflow-y: auto;">
+                <h3 style="color: var(--primary-color, #00ffcc); margin-top:0;">Background & Logo Manager 🌌</h3>
+                <div id="logo-drop-zone" class="drop-zone" onclick="document.getElementById('logo-upload-input').click()">
+                    Drop new logo.svg here or click to upload
+                    <input type="file" id="logo-upload-input" accept=".svg" style="display:none;" onchange="window.handleLogoUpload(this.files[0])">
+                </div>
+                <h4 style="color:#ff00ff; margin-bottom:5px;">Background Auto-Changer & Animation</h4>
+                <label style="color:#00ffcc; font-weight:bold; display:block; margin-bottom:10px;"><input type="checkbox" id="bg-animate-check" onchange="window.toggleBgAnimation()"> Force Background Animation (Panning)</label>
+                <div style="display:flex; gap:10px; align-items:center; margin-bottom:10px; flex-wrap:wrap;">
+                    <label style="color:#00ffcc; font-weight:bold;"><input type="checkbox" id="bg-auto-check" onchange="window.saveBgConfig()"> Auto Change</label>
+                    <label style="color:#00ffcc;">Every (sec):</label>
+                    <input type="number" id="bg-interval-input" class="search-input" style="width:80px; margin-bottom:0;" value="30" onchange="window.saveBgConfig()">
+                    <label style="color:#00ffcc;">Category:</label>
+                    <select id="bg-active-cat-select" class="search-input" style="width:150px; margin-bottom:0;" onchange="window.saveBgConfig()"></select>
+                </div>
+                <h4 style="color:#ff00ff; margin-bottom:5px;">Categories</h4>
+                <div style="display:flex; gap:10px; margin-bottom:10px;">
+                    <input type="text" id="new-bg-cat-input" class="search-input" style="flex:1; margin-bottom:0;" placeholder="New Category...">
+                    <button onclick="window.addBgCategory()" style="padding:10px; background:#ff00ff; color:#000; border:none; cursor:pointer; font-weight:bold;">Add</button>
+                </div>
+                <div style="margin-bottom:10px;">
+                    <label style="color:#00ffcc;">Upload to Category:</label>
+                    <select id="bg-upload-cat-select" class="search-input" style="width:150px; margin-bottom:0;"></select>
+                </div>
+                <div id="bg-drop-zone" class="drop-zone" onclick="document.getElementById('bg-upload-input').click()">
+                    Drop new Background Image here or click to upload
+                    <input type="file" id="bg-upload-input" accept="image/*" style="display:none;" onchange="window.handleBgUpload(this.files[0])">
+                </div>
+                <h4 style="color:#ff00ff;">Background Gallery (Drag to Reorder)</h4>
+                <div id="bg-gallery-container" style="display:flex; flex-direction:column; gap:20px;"></div>
+                <button onclick="saveSettings()" style="padding: 10px 20px; background: #00ffcc; color: #000; border: none; cursor: pointer; font-weight: bold; width: 100%; margin-top: 10px;">Save Settings</button>
+            </div>
+            <div id="settings-themes" style="display:none;">
+                <h3 style="color: var(--primary-color, #00ffcc); margin-top:0;">Select System Theme 🎨</h3>
+                <div style="display:flex; gap:10px; flex-direction:column;">
+                    <button onclick="setTheme('space')" style="padding: 10px; background: #111133; color: #00ffcc; border: 1px solid #00ffcc; cursor: pointer; font-weight: bold;">🌌 Space Theme (Default)</button>
+                    <button onclick="setTheme('umbrella')" style="padding: 10px; background: #330000; color: #ff0000; border: 1px solid #ff0000; cursor: pointer; font-weight: bold;">☂️ Umbrella Corporation</button>
+                    <button onclick="setTheme('matrix')" style="padding: 10px; background: #002200; color: #00ff00; border: 1px solid #00ff00; cursor: pointer; font-weight: bold;">💻 The Matrix</button>
+                    <button onclick="setTheme('dark')" style="padding: 10px; background: #141414; color: #e0e0e0; border: 1px solid #666666; cursor: pointer; font-weight: bold;">🌑 Full Dark Mode (Solid / No Glass)</button>
+                    <button onclick="setTheme('white')" style="padding: 10px; background: #ffffff; color: #1a1a1a; border: 1px solid #0078d4; cursor: pointer; font-weight: bold;">⬜ Full White Mode (Solid / No Glass)</button>
+                </div>
+            </div>
+            <div id="settings-ips" style="display:none;">
+                <button onclick="fetchMyIPs()" style="padding: 10px; background: #ff00ff; color: #000; border: none; cursor: pointer; font-weight: bold; width: 100%; margin-bottom: 10px;">Refresh IPs</button>
+                <ul id="my-ips-list" style="list-style-type:none; padding:0; margin:0; font-family:monospace; color:#00ffcc; max-height: 200px; overflow-y: auto;"></ul>
+            </div>
+            <div id="settings-github" style="display:none;">
+                <label style="color: #00ffcc;">GitHub PAT Token:</label>
+                <input type="password" id="github-token" placeholder="ghp_xxxxxxxxx" class="search-input"><br>
+                <label style="color: #00ffcc;">GitHub Repo URL:</label>
+                <input type="text" id="github-repo" placeholder="https://github.com/owner/repo" class="search-input"><br>
+                <p style="color:#aaa; font-size:0.9em;">Your commands.json will ruthlessy force-push every 5 minutes automatically.</p>
+                <button onclick="saveSettings()" style="padding: 10px 20px; background: #00ffcc; color: #000; border: none; cursor: pointer; font-weight: bold; width: 100%;">Save Settings</button>
+            </div>
+            <div id="settings-icons" style="display:none; max-height: 400px; overflow-y: auto;">
+                <h3 style="color: var(--primary-color, #00ffcc); margin-top:0;">Global Icon Style 🎨</h3>
+                <select id="sys-icon-type" class="search-input" style="margin-bottom:15px;" onchange="localStorage.setItem('cyber_icon_type', this.value); window.hydrateIcons(document, true); showToast('Icon style brutally updated! 💀', 'success');">
+                    <option value="dynamic">Dynamic SVG (Theme-based Colored/B&W)</option>
+                    <option value="bw">Black & White SVG (Minimalist)</option>
+                    <option value="emoji">Raw Emojis (📦, 🐚, ⚙️...)</option>
+                </select>
+                <hr style="border: 1px dashed #00ffcc; margin-bottom: 15px;">
+                <h3 style="color: var(--primary-color, #00ffcc); margin-top:0;">Customize Specific Icons 🖼️</h3>
+                <div class="icon-setting-row"><label>Add Button:</label> <input type="text" id="ico-add" class="search-input icon-drop-input" placeholder="➕"><button class="upload-icon-btn" onclick="uploadIconFile('ico-add')">Upload</button></div>
+                <div class="icon-setting-row"><label>Plugins:</label> <input type="text" id="ico-plugins" class="search-input icon-drop-input" placeholder="🛠️"><button class="upload-icon-btn" onclick="uploadIconFile('ico-plugins')">Upload</button></div>
+                <div class="icon-setting-row"><label>View Graph:</label> <input type="text" id="ico-graph" class="search-input icon-drop-input" placeholder="🕸️"><button class="upload-icon-btn" onclick="uploadIconFile('ico-graph')">Upload</button></div>
+                <div class="icon-setting-row"><label>App Launcher:</label> <input type="text" id="ico-app" class="search-input icon-drop-input" placeholder="📦"><button class="upload-icon-btn" onclick="uploadIconFile('ico-app')">Upload</button></div>
+                <div class="icon-setting-row"><label>Multi-Terminal:</label> <input type="text" id="ico-multi" class="search-input icon-drop-input" placeholder="🐚"><button class="upload-icon-btn" onclick="uploadIconFile('ico-multi')">Upload</button></div>
+                <div class="icon-setting-row"><label>Settings:</label> <input type="text" id="ico-settings" class="search-input icon-drop-input" placeholder="⚙️"><button class="upload-icon-btn" onclick="uploadIconFile('ico-settings')">Upload</button></div>
+                <div class="icon-setting-row"><label>Canvas:</label> <input type="text" id="ico-canvas" class="search-input icon-drop-input" placeholder="🔀"><button class="upload-icon-btn" onclick="uploadIconFile('ico-canvas')">Upload</button></div>
+                <div class="icon-setting-row"><label>Web Preview:</label> <input type="text" id="ico-preview" class="search-input icon-drop-input" placeholder="🌍"><button class="upload-icon-btn" onclick="uploadIconFile('ico-preview')">Upload</button></div>
+                <div class="icon-setting-row"><label>YouTube:</label> <input type="text" id="ico-youtube" class="search-input icon-drop-input" placeholder="📺"><button class="upload-icon-btn" onclick="uploadIconFile('ico-youtube')">Upload</button></div>
+                <div class="icon-setting-row"><label>LAN Internet:</label> <input type="text" id="ico-lan_internet" class="search-input icon-drop-input" placeholder="🌍"><button class="upload-icon-btn" onclick="uploadIconFile('ico-lan_internet')">Upload</button></div>
+                <div class="icon-setting-row"><label>LAN Router:</label> <input type="text" id="ico-lan_router" class="search-input icon-drop-input" placeholder="📶"><button class="upload-icon-btn" onclick="uploadIconFile('ico-lan_router')">Upload</button></div>
+                <div class="icon-setting-row"><label>LAN Localhost:</label> <input type="text" id="ico-lan_localhost" class="search-input icon-drop-input" placeholder="💻"><button class="upload-icon-btn" onclick="uploadIconFile('ico-lan_localhost')">Upload</button></div>
+                <div class="icon-setting-row"><label>LAN Target:</label> <input type="text" id="ico-lan_target" class="search-input icon-drop-input" placeholder="🎯"><button class="upload-icon-btn" onclick="uploadIconFile('ico-lan_target')">Upload</button></div>
+                <div class="icon-setting-row"><label>GitHub Sync:</label> <input type="text" id="ico-github" class="search-input icon-drop-input" placeholder="🐙"><button class="upload-icon-btn" onclick="uploadIconFile('ico-github')">Upload</button></div>
+                <div class="icon-setting-row"><label>Purge RAM:</label> <input type="text" id="ico-ram" class="search-input icon-drop-input" placeholder="♻️"><button class="upload-icon-btn" onclick="uploadIconFile('ico-ram')">Upload</button></div>
+                <div class="icon-setting-row"><label>Live HTML:</label> <input type="text" id="ico-live" class="search-input icon-drop-input" placeholder="💉"><button class="upload-icon-btn" onclick="uploadIconFile('ico-live')">Upload</button></div>
+                <div class="icon-setting-row"><label>Downloads:</label> <input type="text" id="ico-download" class="search-input icon-drop-input" placeholder="📥"><button class="upload-icon-btn" onclick="uploadIconFile('ico-download')">Upload</button></div>
+                <div class="icon-setting-row"><label>WormGPT:</label> <input type="text" id="ico-worm" class="search-input icon-drop-input" placeholder="🪱"><button class="upload-icon-btn" onclick="uploadIconFile('ico-worm')">Upload</button></div>
+                <div class="icon-setting-row"><label>Instant Run:</label> <input type="text" id="ico-run" class="search-input icon-drop-input" placeholder="🔍"><button class="upload-icon-btn" onclick="uploadIconFile('ico-run')">Upload</button></div>
+                <div class="icon-setting-row"><label>Command Btn:</label> <input type="text" id="ico-cmd" class="search-input icon-drop-input" placeholder="🎯"><button class="upload-icon-btn" onclick="uploadIconFile('ico-cmd')">Upload</button></div>
+                <div class="icon-setting-row"><label>One-Liner:</label> <input type="text" id="ico-oneliner" class="search-input icon-drop-input" placeholder="💻"><button class="upload-icon-btn" onclick="uploadIconFile('ico-oneliner')">Upload</button></div>
+                <p style="color:#aaa; font-size:0.9em;">Drag and drop an image directly onto the input box, use text, or upload your own twisted image to replace the icon natively via Base64.</p>
+                <button onclick="saveSettings()" style="padding: 10px 20px; background: #00ffcc; color: #000; border: none; cursor: pointer; font-weight: bold; width: 100%;">Save Settings</button>
+            </div>
+            <div id="settings-osicons" style="display:none; max-height: 400px; overflow-y: auto;">
+                <h3 style="color: var(--primary-color, #00ffcc); margin-top:0;">OS Icons 🖥️</h3>
+                <div class="icon-setting-row"><label>Windows OS:</label> <input type="text" id="ico-windows" class="search-input icon-drop-input" placeholder="🪟"><button class="upload-icon-btn" onclick="uploadIconFile('ico-windows')">Upload</button></div>
+                <div class="icon-setting-row"><label>Linux OS:</label> <input type="text" id="ico-linux" class="search-input icon-drop-input" placeholder="🐧"><button class="upload-icon-btn" onclick="uploadIconFile('ico-linux')">Upload</button></div>
+                <p style="color:#aaa; font-size:0.9em;">Upload .svg or .png images to replace the Windows and Linux indicators on commands.</p>
+                <button onclick="saveSettings()" style="padding: 10px 20px; background: #00ffcc; color: #000; border: none; cursor: pointer; font-weight: bold; width: 100%;">Save Settings</button>
+            </div>
+            <div id="settings-sounds" style="display:none;">
+                <h3 style="color: #ff00ff; margin-top:0;">Evil Audio Setup 🎵</h3>
+                <label style="color: #00ffcc;">Upload New Track:</label>
+                <div style="display:flex; gap:10px; margin-bottom:10px;">
+                    <input type="text" id="sound-upload-name" placeholder="Display Name (e.g. hack_theme.mp3)" class="search-input" style="flex:1; margin-bottom:0;">
+                    <input type="file" id="sound-upload-file" accept="audio/*" class="search-input" style="flex:1; margin-bottom:0;">
+                </div>
+                <button onclick="uploadEvilSound()" style="padding: 10px; background: #ffaa00; color: #000; border: none; cursor: pointer; font-weight: bold; width: 100%; margin-bottom:20px;">UPLOAD TRACK</button>
+
+                <label style="color: #ff0000; font-weight: bold; cursor: pointer; display: block; margin-bottom: 10px; border: 1px dashed #ff0000; padding: 10px; background: rgba(255,0,0,0.1);">
+                    <input type="checkbox" id="sys-reactive-shadows"> 🔊 Enable Audio-Reactive Evil Shadows (BASS DROPS SHAKE THE SYSTEM)
+                </label>
+
+                <h3 style="color: #ff00ff;">Manage Tracks</h3>
+                <ul id="settings-sounds-list" style="list-style:none; padding:0; margin:0; border:1px solid #333; max-height:200px; overflow-y:auto;"></ul>
+                <button onclick="saveSettings()" style="padding: 10px 20px; background: #00ffcc; color: #000; border: none; cursor: pointer; font-weight: bold; width: 100%; margin-top: 10px;">Save Settings</button>
+            </div>
+            <div id="settings-terminal" style="display:none; max-height: 400px; overflow-y: auto;">
+                <h3 style="color: var(--primary-color, #00ffcc); margin-top:0;">Terminal Configuration 🖥️</h3>
+                <label style="color: #00ffcc;">Custom Terminal Prompt Name:</label>
+                <input type="text" id="sys-terminal-prompt" placeholder="e.g. X, ROOT, CYBER" class="search-input" style="margin-bottom:10px;">
+                <p style="color:#aaa; font-size:0.9em; margin-top:-5px;">This brutally overwrites the default 'X' prompt prefix in all shells.</p>
+                <label style="color: #00ffcc;">Windows Terminal Shell:</label>
+                <select id="sys-win-shell" class="search-input" style="margin-bottom:10px;" onchange="localStorage.setItem('cyber_win_shell', this.value); showToast('Terminal shell ruthlessly changed to ' + this.value, 'success');">
+                    <option value="cmd">CMD (cmd.exe)</option>
+                    <option value="powershell">PowerShell</option>
+                    <option value="msys2">MSYS2 Bash (C:\msys64\usr\bin\bash.exe)</option>
+                    <option value="mingw64">MinGW64 Bash (C:\msys64\usr\bin\bash.exe + MINGW64)</option>
+                </select>
+                <p style="color:#aaa; font-size:0.9em;">Any new terminal tab, interactive terminal, or background execution will instantly use this shell. Windows only.</p>
+                <label style="color: #00ffcc; font-weight: bold; cursor: pointer; display: block; margin-bottom: 15px; border: 1px dashed #00ffcc; padding: 10px; background: rgba(0,255,204,0.1);">
+                    <input type="checkbox" id="sys-multi-tool-instances"> 🔲 Enable Multiple Tool Instances (Clicking icon spawns new terminal instead of toggling)
+                </label>
+                <label style="color: #00ffcc; font-weight: bold; display: block; margin-bottom: 8px;">🎨 Terminal Box Background Style:</label>
+                <select id="sys-terminal-bg-style" class="search-input" style="margin-bottom: 15px;" onchange="applyTerminalBgStyle(this.value); localStorage.setItem('cyber_terminal_bg', this.value);">
+                    <option value="transparent">🪟 Transparent (See-through)</option>
+                    <option value="black-logo">⬛ Black + Logo Watermark</option>
+                    <option value="blur-logo">🌫️ Blur + Logo Watermark</option>
+                </select>
+                <button onclick="saveSettings()" style="padding: 10px 20px; background: #00ffcc; color: #000; border: none; cursor: pointer; font-weight: bold; width: 100%;">Save Settings</button>
+            </div>
+            <div id="settings-custom" style="display:none; max-height: 400px; overflow-y: auto;">
+                <h3 style="color: var(--primary-color, #00ffcc); margin-top:0;">Custom Interactive Terminals 🛠️</h3>
+                <div id="custom-tools-container"></div>
+                <button onclick="addCustomToolField()" style="padding: 10px; background: #00ccff; color: #000; border: none; cursor: pointer; font-weight: bold; width: 100%; margin-bottom: 10px;">➕ Add Tool Tab</button>
+                <p style="color:#aaa; font-size:0.9em;">Create savage new icons pinned to your left toolbar. When you ruthlessly click one, it spawns an interactive terminal executing your command automatically.</p>
+                <button onclick="saveSettings()" style="padding: 10px 20px; background: #00ffcc; color: #000; border: none; cursor: pointer; font-weight: bold; width: 100%;">Save Settings</button>
+            </div>
+            <div id="settings-security" style="display:none; max-height: 400px; overflow-y: auto;">
+                <h3 style="color: var(--primary-color, #00ffcc); margin-top:0;">Advanced System Lock 💀</h3>
+                <label style="color: #00ffcc; font-weight: bold; cursor: pointer; display: block; margin-bottom: 15px; border: 1px dashed #00ffcc; padding: 10px; background: rgba(0,255,204,0.1);">
+                    <input type="checkbox" id="sys-lock-show-logo" checked> 🖼️ Show Logo on Lock Doors
+                </label>
+                <div style="margin-bottom: 15px;">
+                    <label style="color: #00ffcc; font-weight: bold;">Door Transparency (Alpha):</label><br>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 5px;">
+                        <input type="range" id="sys-lock-opacity" min="0" max="1" step="0.05" value="0.3" style="flex: 1; cursor: pointer; accent-color: #00ffcc;" oninput="document.getElementById('sys-lock-opacity-val').innerText=this.value">
+                        <span id="sys-lock-opacity-val" style="color: #00ffcc; font-family: monospace; width: 40px;">0.3</span>
+                    </div>
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <label style="color: #00ffcc; font-weight: bold;">Door Blur Intensity (px):</label><br>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 5px;">
+                        <input type="range" id="sys-lock-blur" min="0" max="50" step="1" value="15" style="flex: 1; cursor: pointer; accent-color: #00ffcc;" oninput="document.getElementById('sys-lock-blur-val').innerText=this.value">
+                        <span id="sys-lock-blur-val" style="color: #00ffcc; font-family: monospace; width: 40px;">15</span>
+                    </div>
+                </div>
+                <button onclick="resetSystemLock()" style="padding: 10px; background: #ff0000; color: #fff; border: none; cursor: pointer; font-weight: bold; width: 100%; margin-bottom: 15px;">RESET / CHANGE PATTERN LOCK 💥</button>
+                <button onclick="saveSettings()" style="padding: 10px 20px; background: #00ffcc; color: #000; border: none; cursor: pointer; font-weight: bold; width: 100%;">Save Settings</button>
+            </div>
+            <div id="settings-paths" style="display:none; max-height: 400px; overflow-y: auto;">
+                <h3 style="color: var(--primary-color, #00ffcc); margin-top:0;">System Path Overrides 📂</h3>
+                <p style="color:#aaa; font-size:0.85em; margin-bottom:15px;">Redefine where the system looks for files. Absolute paths recommended for Windows (e.g. C:\Data\Notes) and Linux (e.g. /opt/notes).</p>
+                
+                <label style="color:#00ffcc;">Notes Directory:</label>
+                <input type="text" id="path-notes" placeholder="Default: notes/" class="search-input">
+                
+                <label style="color:#00ffcc;">Multi-Commands Directory:</label>
+                <input type="text" id="path-commands" placeholder="Default: commands/" class="search-input">
+                
+                <label style="color:#00ffcc;">Scripts Directory:</label>
+                <input type="text" id="path-scripts" placeholder="Default: scripts/" class="search-input">
+                
+                <label style="color:#00ffcc;">Password Lists:</label>
+                <input type="text" id="path-passwords" placeholder="Default: passwordlist/" class="search-input">
+                
+                <label style="color:#00ffcc;">Payloads List Source:</label>
+                <input type="text" id="path-payloadslist" placeholder="Default: payloadslist/" class="search-input">
+                
+                <label style="color:#00ffcc;">Payloads Output:</label>
+                <input type="text" id="path-payloads" placeholder="Default: payloads/" class="search-input">
+                
+                <label style="color:#00ffcc;">Workflows Directory:</label>
+                <input type="text" id="path-workflows" placeholder="Default: workflows/" class="search-input">
+                
+                <button onclick="saveSettings()" style="padding: 10px 20px; background: #00ffcc; color: #000; border: none; cursor: pointer; font-weight: bold; width: 100%;">Save Path Mappings</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="file-mgr-modal" class="modal">
+        <div class="modal-content" style="width: 90%; max-width: 1200px; display: flex; flex-direction: row; height: 80vh; padding: 0;">
+            <div style="width: 300px; background: #111; border-right: 1px solid #00ffcc; display: flex; flex-direction: column; padding: 15px;">
+                <h3 style="color:#ff00ff; margin-top:0;">Saved Files</h3>
+                <div style="display:flex; gap:5px; margin-bottom:10px; flex-wrap:wrap;">
+                    <button onclick="switchFileMgrTab('commands')" id="tab-btn-commands" style="flex:1; padding:5px; background:#00ffcc; color:#000; border:none; cursor:pointer; font-weight:bold;">Cmds</button>
+                    <button onclick="switchFileMgrTab('notes')" id="tab-btn-notes" style="flex:1; padding:5px; background:#111; color:#00ffcc; border:1px solid #00ffcc; cursor:pointer; font-weight:bold;">Notes</button>
+                    <button onclick="switchFileMgrTab('scripts')" id="tab-btn-scripts" style="flex:1; padding:5px; background:#111; color:#00ffcc; border:1px solid #00ffcc; cursor:pointer; font-weight:bold;">Scripts</button>
+                    <button onclick="switchFileMgrTab('passwordlist')" id="tab-btn-passwords" style="flex:1; padding:5px; background:#111; color:#00ffcc; border:1px solid #00ffcc; cursor:pointer; font-weight:bold;">Passwords</button>
+                    <button onclick="switchFileMgrTab('payloadslist')" id="tab-btn-payloadslist" style="flex:1; padding:5px; background:#111; color:#00ffcc; border:1px solid #00ffcc; cursor:pointer; font-weight:bold;">PayloadsList</button>
+                    <button onclick="switchFileMgrTab('payloads')" id="tab-btn-payloads" style="flex:1; padding:5px; background:#111; color:#00ffcc; border:1px solid #00ffcc; cursor:pointer; font-weight:bold;">Payloads</button>
+                </div>
+                <input type="text" id="file-mgr-search" placeholder="Search..." class="search-input" style="margin-bottom:10px; padding:5px;" onkeyup="filterFileMgrList()">
+                <ul id="file-mgr-list" style="list-style:none; padding:0; margin:0; flex:1; overflow-y:auto; border:1px solid #333; background:#000;"></ul>
+            </div>
+            <div style="flex:1; display:flex; flex-direction:column; padding: 15px; position:relative;">
+                <div class="modal-header">
+                    <h2 style="margin:0;">File Manager 💀</h2>
+                    <span class="close" onclick="closeModal('file-mgr-modal')">&times;</span>
+                </div>
+                <input type="hidden" id="file-mgr-type" value="commands">
+                <input type="hidden" id="file-mgr-old-filename" value="">
+                <input type="text" id="file-mgr-name" placeholder="Filename (e.g. script.txt)" class="search-input"><br>
+                <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                    <button onclick="insertMacroFileMgr('{target}')" style="padding: 5px 10px; background: #00ffcc; color: #000; border: none; cursor: pointer; font-weight: bold;">{target}</button>
+                    <button onclick="insertMacroFileMgr('{ip}')" style="padding: 5px 10px; background: #ff00ff; color: #000; border: none; cursor: pointer; font-weight: bold;">{ip}</button>
+                    <button onclick="insertMacroFileMgr('{attacker-ip}')" style="padding: 5px 10px; background: #ffaa00; color: #000; border: none; cursor: pointer; font-weight: bold;">{atk-ip}</button>
+                    <button onclick="insertMacroFileMgr('{attacker-url}')" style="padding: 5px 10px; background: #00ccff; color: #000; border: none; cursor: pointer; font-weight: bold;">{atk-url}</button>
+                    <button onclick="insertMacroFileMgr('{cookie}')" style="padding: 5px 10px; background: #ff00ff; color: #000; border: none; cursor: pointer; font-weight: bold;">{cookie}</button>
+                </div>
+                <textarea id="file-mgr-content" class="search-input" style="flex: 1; resize: none; font-family: monospace;" placeholder="Content..."></textarea><br>
+                <button onclick="saveFileMgr()" style="padding: 10px 20px; background: #ff00ff; color: #000; border: none; cursor: pointer; font-weight: bold; width: 100%;">SAVE THIS BITCH</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="canvas-modal" class="modal">
+        <div class="modal-content" style="width: 95%; height: 95%; display: flex; flex-direction: column; padding: 10px; max-width: none;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h2 style="margin:0;">Canvas Workflow 🔀</h2>
+                <div style="display: flex; align-items: center;">
+                    <div style="display: flex; gap: 5px; margin-right: 15px; background: #111; padding: 5px; border: 1px solid #555; border-radius: 5px;">
+                        <button id="canvas-proto-http" onclick="setGlobalProtocol('http://')" style="background: #111; color: #00ffcc; border: 1px solid #00ffcc; cursor: pointer; font-weight: bold; font-size: 0.8em; padding: 5px 10px;">HTTP</button>
+                        <button id="canvas-proto-https" onclick="setGlobalProtocol('https://')" style="background: #00ffcc; color: #000; border: none; cursor: pointer; font-weight: bold; font-size: 0.8em; padding: 5px 10px;">HTTPS</button>
+                    </div>
+                    <button id="btn-canvas-terminal-space" onclick="toggleCanvasTerminalSpace()" style="padding: 10px 20px; background: #ff00ff; color: #000; font-weight: bold; cursor: pointer; border: none; margin-right: 10px;">📺 FULL TERMINAL SPACE</button>
+                    <button onclick="openSaveWorkflowModal()" style="padding: 10px 20px; background: #ffaa00; color: #000; font-weight: bold; cursor: pointer; border: none; margin-right: 10px;">💾 SAVE</button>
+                    <button onclick="openLoadWorkflowModal()" style="padding: 10px 20px; background: #00ccff; color: #000; font-weight: bold; cursor: pointer; border: none; margin-right: 10px;">📂 LOAD</button>
+                    <button onclick="toggleCanvasFullscreen()" style="padding: 10px 20px; background: #555; color: #fff; font-weight: bold; cursor: pointer; border: none; margin-right: 10px;">🔲 FULLSCREEN</button>
+                    <button onclick="startCanvasWorkflow()" style="padding: 10px 20px; background: #00ffcc; color: #000; font-weight: bold; cursor: pointer; border: none; margin-right: 10px;">▶ START WORKFLOW</button>
+                    <button onclick="clearCanvas()" style="padding: 10px 20px; background: #ff0000; color: #000; font-weight: bold; cursor: pointer; border: none; margin-right: 10px;">🗑 CLEAR</button>
+                    <span class="close" onclick="closeModal('canvas-modal')">&times;</span>
+                </div>
+            </div>
+            <div style="display: flex; flex: 1; min-height: 0; gap: 10px;">
+                <div id="canvas-sidebar" style="width: 300px; background: #0a0a1a; border: 1px solid #00ffcc; overflow-y: auto; padding: 10px; display: flex; flex-direction: column;">
+                    <h3 style="color:#ff00ff; margin-top:0; margin-bottom: 10px;">Commands</h3>
+                    <input type="text" id="canvas-cmd-search-input" placeholder="Search commands..." class="search-input" style="padding: 8px; margin-bottom: 10px;" onkeyup="renderCanvasSidebar()">
+                    <div id="canvas-commands-list" style="flex: 1; overflow-y: auto; margin-bottom: 20px; border-bottom: 1px dashed #333;"></div>
+                    
+                    <h3 style="color:#00ccff; margin-top:0; margin-bottom: 10px;">Saved Workflows</h3>
+                    <input type="text" id="canvas-workflow-search-input" placeholder="Search workflows..." class="search-input" style="padding: 8px; margin-bottom: 10px;" onkeyup="renderCanvasWorkflowList()">
+                    <div id="canvas-workflow-list-sidebar" style="flex: 1; overflow-y: auto;"></div>
+                </div>
+                <div id="canvas-terminal-space"></div>
+                <div id="canvas-workspace" style="flex: 1; background: #000; border: 1px solid #00ffcc; position: relative; overflow: hidden;">
+                    <div id="canvas-network-container" style="width:100%; height:100%; position:absolute; top:0; left:0;"></div>
+                    <div id="canvas-pins-container" style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:10;"></div>
+                    <svg id="canvas-edge-svg" style="display:none; position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:9;">
+                        <path id="canvas-temp-edge" d="" fill="none" stroke="#00ffcc" stroke-width="3" stroke-dasharray="5,5" style="filter: drop-shadow(0 0 8px #00ffcc);" />
+                    </svg>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="quad-term-modal" class="modal">
+        <div class="modal-content" style="width: 95%; height: 95%; padding: 0; background: #050510; border: 1px solid #00ffcc; max-width: none; display: flex; flex-direction: column;">
+            <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; padding: 10px; background: rgba(0, 255, 204, 0.1); border-bottom: 1px solid #00ffcc; flex-shrink: 0;">
+                <h2 style="margin: 0; color: #00ffcc;">Quad Web Terminal</h2>
+                <span class="close" onclick="closeModal('quad-term-modal')" style="color: #00ffcc;">&times;</span>
+            </div>
+            <iframe id="quad-term-iframe" style="flex: 1; width: 100%; border: none;"></iframe>
+        </div>
+    </div>
+
+    <div id="interactive-terminal-modal" class="modal">
+        <div class="modal-content terminal-content" style="width: 80%; max-width: 1000px; height: 70%; display: flex; flex-direction: column;">
+            <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #00ffcc; padding-bottom: 10px; margin-bottom: 10px; box-sizing: border-box;">
+                <h2 style="margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Interactive Command Terminal</h2>
+                <div style="display: flex; gap: 10px; align-items: center; flex-shrink: 0;">
+                    <button onclick="if(window.activeInteractiveTermId) socket.emit('pty_input', { input: String.fromCharCode(3), term_id: window.activeInteractiveTermId, client_id: clientId });" style="padding: 5px 15px; background: #ff0000; color: #fff; border: none; font-weight: bold; cursor: pointer; border-radius: 3px;">🛑 STOP PROCESS (Ctrl+C)</button>
+                    <span class="close" onclick="closeModal('interactive-terminal-modal')">&times;</span>
+                </div>
+            </div>
+            <div id="interactive-terminal-container" style="flex: 1; width: 100%; text-align: left; background: #000; border: 1px solid #00ffcc; position: relative; overflow: hidden;"></div>
+        </div>
+    </div>
+
+    <div id="openvpn-modal" class="modal">
+        <div class="modal-content" style="width: 90%; max-width: 1200px; height: 85vh; display: flex; flex-direction: column;">
+            <div class="modal-header">
+                <h2 style="color: #00ffcc; margin-top:0; margin-bottom:0;">Advanced OpenVPN Manager 💀</h2>
+                <span class="close" onclick="closeModal('openvpn-modal');">&times;</span>
+            </div>
+            <div id="ovpn-status" style="margin-bottom: 10px; font-weight: bold; font-family: monospace;">Checking OpenVPN installation...</div>
+            <div style="display: flex; gap: 15px; flex: 1; min-height: 0;">
+                <div style="width: 250px; background: #111; border: 1px solid #00ffcc; display: flex; flex-direction: column; padding: 10px; border-radius: 5px;">
+                    <h3 style="color:#ff00ff; margin-top:0;">Saved Configs</h3>
+                    <input type="text" id="ovpn-search" placeholder="Search configs..." class="search-input" style="margin-bottom:10px; padding:5px;" onkeyup="window.filterOvpnList()">
+                    <ul id="ovpn-saved-list" style="list-style:none; padding:0; margin:0; flex:1; overflow-y:auto; border:1px solid #333; background:#000;"></ul>
+                </div>
+                <div style="flex: 1; display: flex; flex-direction: column; gap: 10px;">
+                    <div id="ovpn-drop-zone" style="border: 2px dashed #ff00ff; padding: 20px; text-align: center; color: #ff00ff; cursor: pointer; background: #111; transition: 0.3s; border-radius: 5px;">
+                        Drop .ovpn file here, or click to upload that shit. 📂
+                        <input type="file" id="ovpn-file-input" style="display:none;" accept=".ovpn">
+                    </div>
+                    <input type="text" id="ovpn-filename" placeholder="config.ovpn" class="search-input" style="margin-bottom: 0;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin: 5px 0;">
+                        <label style="color:#00ffcc; cursor:pointer; font-weight:bold;">
+                            <input type="checkbox" id="ovpn-privacy-toggle" checked onchange="document.getElementById('ovpn-editor').classList.toggle('privacy-blur', this.checked)"> 🙈 Privacy Mask (Blue Box)
+                        </label>
+                    </div>
+                    <textarea id="ovpn-editor" class="search-input privacy-blur" style="flex: 1; resize: none; font-family: monospace; font-size: 0.9em; border-color: #ff00ff; color: #00ffcc; transition: 0.3s;" placeholder="File content goes here... edit it like a pro."></textarea>
+                    <button onclick="saveOvpnFile()" style="padding: 10px; background: #ff00ff; color: #000; border: none; font-weight: bold; cursor: pointer; border-radius: 5px;">💾 SAVE OVPN</button>
+                </div>
+                <div style="flex: 1; display: flex; flex-direction: column; gap: 10px;">
+                    <div style="display: flex; gap: 10px;">
+                        <button onclick="connectOpenVPN()" style="flex: 1; padding: 10px; background: #00ffcc; color: #000; border: none; font-weight: bold; cursor: pointer; border-radius: 5px;">⚡ CONNECT</button>
+                        <button onclick="disconnectOpenVPN()" style="flex: 1; padding: 10px; background: #ff0000; color: #000; border: none; font-weight: bold; cursor: pointer; border-radius: 5px;">🛑 DISCONNECT</button>
+                    </div>
+                    <div id="ovpn-terminal-container" style="flex: 1; background: #000; border: 1px solid #00ffcc; position: relative; overflow: hidden; border-radius: 5px;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="tool-terminal-modal" class="modal" style="display: none; align-items: center; justify-content: center; z-index: 120; background-color: transparent; pointer-events: none;">
+        <div class="modal-content terminal-content" style="width: 70%; height: 70%; position: relative; margin: 0; box-shadow: 0 0 30px #ff00ff; border-color: #ff00ff; pointer-events: auto; display: flex; flex-direction: column;">
+            <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 1px solid #ff00ff; padding-bottom: 10px; box-sizing: border-box;">
+                <h2 id="tool-terminal-title" style="color: #ff00ff; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Tool Terminal</h2>
+                <div style="display: flex; gap: 10px; align-items: center; flex-shrink: 0;">
+                    <button onclick="if(currentToolTerm) socket.emit('pty_input', { input: String.fromCharCode(3), term_id: 'tool__' + currentToolTerm, client_id: clientId });" style="padding: 5px 15px; background: #ff0000; color: #fff; border: none; font-weight: bold; cursor: pointer; border-radius: 3px;">🛑 STOP PROCESS (Ctrl+C)</button>
+                    <span class="close" onclick="closeToolTerminal()" style="color: #ff00ff;">&times;</span>
+                </div>
+            </div>
+            <div id="tool-terminal-container" style="flex: 1; width: 100%; text-align: left; background: #000; border: 1px solid #ff00ff; position: relative; overflow: hidden;"></div>
+        </div>
+    </div>
+
+    <div id="multi-terminal-modal" class="right-panel-modal" style="display: none;" onmouseleave="closeMultiTerminalPanel()">
+        <div class="modal-content terminal-content right-docked-content" style="display: flex; flex-direction: column;">
+            <div>
+                <span class="close" onclick="closeModal('multi-terminal-modal')">&times;</span>
+                <h2 style="display:inline-block; margin-right:15px;">Advanced Multi-Terminal</h2>
+                <span onclick="document.getElementById('multi-term-container').classList.toggle('privacy-blur')" style="cursor:pointer; font-size: 1.5em; vertical-align:middle; margin-right:15px;" title="Toggle Blur">👁️</span>
+                <button onclick="createNewMultiTab()" style="padding:5px 10px; background:#00ffcc; border:none; color:#000; cursor:pointer; font-weight:bold;">+ New Tab</button>
+                <div id="multi-term-tabs" style="display: flex; gap: 5px; margin-top: 10px; border-bottom: 1px solid #00ffcc; padding-bottom: 5px; overflow-x: auto;"></div>
+            </div>
+            <div style="display: flex; gap: 10px; flex: 1; margin-top: 10px; min-height: 0; height: 100%; overflow: hidden;">
+                <div id="multi-term-container" style="flex: 1; text-align: left; background: transparent; border: 1px solid #00ffcc; position: relative; overflow: hidden; display: flex; flex-direction: column;"></div>
+                
+                <div id="multi-cmd-sidebar" style="width: 300px; background: #111; border: 1px solid #ff00ff; display: flex; flex-direction: column; padding: 10px; box-sizing: border-box;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <h3 style="margin-top:0; color:#ff00ff; font-size: 1.2em;">Files</h3>
+                        <div>
+                            <button onclick="switchMultiTermSidebar('commands')" id="mt-tab-cmd" style="background:#00ffcc; color:#000; border:none; padding:2px 5px; cursor:pointer; font-weight:bold;">Cmds</button>
+                            <button onclick="switchMultiTermSidebar('notes')" id="mt-tab-note" style="background:#111; color:#00ffcc; border:1px solid #00ffcc; padding:2px 5px; cursor:pointer; font-weight:bold;">Notes</button>
+                        </div>
+                    </div>
+                    <input type="text" id="multi-cmd-search" placeholder="Search files..." class="search-input" onkeyup="filterMultiCmds()" style="padding: 5px; margin-bottom: 10px;">
+                    <ul id="multi-cmd-list" style="list-style: none; padding: 0; margin: 0; flex: 1; overflow-y: auto; border: 1px solid #333; background: #000; margin-bottom: 10px;"></ul>
+                    <textarea id="multi-cmd-editor" style="height: 150px; background: #000; color: #00ffcc; border: 1px solid #00ffcc; font-family: monospace; padding: 5px; margin-bottom: 10px; resize: none;" placeholder="File content..."></textarea>
+                    <button id="mt-run-btn" onclick="runMultiCmd()" style="padding: 10px; background: #ff00ff; color: #000; font-weight: bold; border: none; cursor: pointer;">Run in Terminal ⚡</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="save-workflow-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 style="margin:0;">Save Workflow</h2>
+                <span class="close" onclick="closeModal('save-workflow-modal')">&times;</span>
+            </div>
+            <input type="text" id="workflow-save-name" placeholder="Workflow Name..." class="search-input"><br>
+            <button onclick="saveWorkflow()" style="padding: 10px 20px; background: #00ffcc; color: #000; border: none; cursor: pointer; font-weight: bold; width: 100%;">Save</button>
+        </div>
+    </div>
+
+    <div id="load-workflow-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 style="margin:0;">Load Workflow</h2>
+                <span class="close" onclick="closeModal('load-workflow-modal')">&times;</span>
+            </div>
+            <input type="text" id="workflow-search" placeholder="Search workflows..." class="search-input" onkeyup="filterWorkflows()">
+            <ul id="workflow-list" style="list-style-type: none; padding: 0; max-height: 200px; overflow-y: auto;"></ul>
+        </div>
+    </div>
+
+    <div id="preview-modal" class="modal">
+        <div class="modal-content browser-theme" style="width: 90%; height: 90%; max-width: none; padding: 0; background: #1a1e24; border: 2px solid #233440; border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 0 30px rgba(0,255,204,0.3);">
+            <div class="modal-header" style="background: #0b1115; padding: 8px 15px; border-bottom: 1px solid #233440; user-select: none; margin-bottom: 0;">
+                <div style="display: flex; align-items: center; gap: 15px; color: #fff; flex: 1; overflow: hidden;">
+                    <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
+                        <span style="color: #00ffcc; font-size: 1.2em;">🌐</span>
+                        <span style="font-family: sans-serif; font-size: 0.9em; letter-spacing: 0.5px; font-weight: bold;">Browser</span>
+                    </div>
+                    <div style="display: flex; align-items: center; flex: 1; overflow-x: auto; scrollbar-width: none;">
+                        <div id="browser-tabs-container" style="display: flex; gap: 5px;"></div>
+                        <div onclick="window.createNewBrowserTab()" style="color: #00ffcc; font-size: 1.5em; cursor: pointer; padding: 0 10px; opacity: 0.7; transition: 0.2s; flex-shrink: 0;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.7'" title="New Tab">+</div>
+                    </div>
+                </div>
+                
+                <div style="display: flex; align-items: center; gap: 10px; flex-shrink: 0;">
+                    <select id="preview-browser-select" style="background: #233440; color: #00ffcc; border: 1px solid #3a4148; padding: 4px 8px; border-radius: 3px; font-family: sans-serif; font-size: 0.8em; outline: none; cursor: pointer;" title="Spoof User-Agent or use Playwright">
+                        <option value="chrome">Chrome (Win)</option>
+                        <option value="firefox">Firefox (Win)</option>
+                        <option value="safari">Safari (Mac)</option>
+                        <option value="mobile_ios">iPhone Safari</option>
+                        <option value="mobile_android">Android Chrome</option>
+                        <option value="playwright_html">🔥 Real Browser (DOM Bypass)</option>
+                        <option value="playwright_png">📸 Real Browser (Screenshot)</option>
+                    </select>
+                    <button class="maximize-btn" onclick="togglePreviewFullscreen()" style="background: transparent; color: #00ffcc; border: none; font-size: 20px; cursor: pointer; padding: 2px 5px; transition: 0.2s;" onmouseover="this.style.textShadow='0 0 8px #00ffcc'" onmouseout="this.style.textShadow='none'" title="Maximize">□</button>
+                    <span class="close" onclick="closeModal('preview-modal')" style="color: #fff;">&times;</span>
+                </div>
+            </div>
+
+            <div style="display: flex; align-items: center; background: #1a1e24; padding: 10px 15px; gap: 10px; border-bottom: 1px solid #233440;">
+                <button class="nav-btn" onclick="try{document.getElementById('iframe_' + window.activeBrowserTabId).contentWindow.history.back()}catch(e){}" style="background: #007c91; color: #fff; border: 1px solid #0093a8; width: 32px; height: 32px; display: flex; justify-content: center; align-items: center; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 1.4em; box-shadow: inset 0 1px 0 rgba(255,255,255,0.2);">‹</button>
+                <button class="nav-btn" onclick="try{document.getElementById('iframe_' + window.activeBrowserTabId).contentWindow.history.forward()}catch(e){}" style="background: #007c91; color: #fff; border: 1px solid #0093a8; width: 32px; height: 32px; display: flex; justify-content: center; align-items: center; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 1.4em; box-shadow: inset 0 1px 0 rgba(255,255,255,0.2);">›</button>
+                <button class="nav-btn" onclick="loadPreviewUrl()" style="background: #007c91; color: #fff; border: 1px solid #0093a8; width: 32px; height: 32px; display: flex; justify-content: center; align-items: center; border-radius: 4px; cursor: pointer; font-size: 1.1em; box-shadow: inset 0 1px 0 rgba(255,255,255,0.2);">🏠</button>
+                
+                <div style="flex: 1; display: flex; align-items: center; background: #0b1115; border-radius: 20px; padding: 0 15px; box-shadow: inset 0 2px 5px rgba(0,0,0,0.5); border: 1px solid #233440; transition: 0.3s;" onmouseover="this.style.borderColor='#00ffcc'" onmouseout="this.style.borderColor='#233440'">
+                    <span style="color: #00ffcc; margin-right: 10px;">🔒</span>
+                    <select id="preview-render-mode" style="background: transparent; color: #ff00ff; border: none; font-weight: bold; outline: none; margin-right: 10px; cursor: pointer;" title="Select Injection Mode">
+                        <option value="proxy" style="background: #111;">🛡️ Proxy</option>
+                        <option value="iframe" style="background: #111;">📦 Iframe</option>
+                    </select>
+                    <input type="text" id="preview-url-input" style="flex: 1; border: none; outline: none; padding: 8px 0; background: transparent; color: #00ffcc; font-family: monospace; font-size: 0.95em; width: 100%;" placeholder="https://target.com" onkeypress="if(event.key==='Enter') loadPreviewUrl()">
+                    <span onclick="loadPreviewUrl()" style="color: #00ffcc; cursor: pointer; font-size: 1.2em; padding: 0 8px; font-weight: bold;" title="Refresh">↻</span>
+                </div>
+                
+                <button class="nav-btn" onclick="bookmarkUrl()" style="background: #007c91; color: #fff; border: 1px solid #0093a8; width: 32px; height: 32px; display: flex; justify-content: center; align-items: center; border-radius: 4px; cursor: pointer; font-size: 1.1em; box-shadow: inset 0 1px 0 rgba(255,255,255,0.2);">⭐</button>
+            </div>
+
+            <div id="browser-iframes-container" style="flex: 1; background: #1a1e24; padding: 15px; box-sizing: border-box; display: flex; flex-direction: column;">
+            </div>
+        </div>
+    </div>
+
+    <div id="live-editor-modal" class="modal">
+        <div class="modal-content" style="width: 90%; height: 90%; display: flex; flex-direction: column;">
+            <div class="modal-header">
+                <h2 style="margin:0;">Live HTML Injector 💉</h2>
+                <span class="close" onclick="closeModal('live-editor-modal')">&times;</span>
+            </div>
+            <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                <input type="text" id="live-url-input" class="search-input" placeholder="Base URL for assets/iframe target (e.g. https://example.com)..." style="margin-bottom: 0; flex: 1;">
+                <div style="display: flex; align-items: center; gap: 10px; color: #00ffcc; background: #111; padding: 0 10px; border: 1px solid #555;">
+                    <label>Stealth Opacity:</label>
+                    <input type="range" id="live-opacity-slider" min="0.00001" max="1" step="0.00001" value="1" style="width: 150px; cursor: pointer; accent-color: #ff00ff;">
+                    <span id="live-opacity-val" style="width: 60px;">1.00000</span>
+                </div>
+            </div>
+            <div style="display: flex; flex: 1; gap: 10px; min-height: 0;">
+                <textarea id="live-editor-input" style="flex: 1; background: #000; color: #00ffcc; border: 1px solid #00ffcc; font-family: monospace; padding: 10px; resize: none;" placeholder="Write malicious HTML/JS payload here to render real-time..."></textarea>
+                <iframe id="live-editor-iframe" style="flex: 1; border: 1px solid #ff00ff; background: #fff;"></iframe>
+            </div>
+        </div>
+    </div>
+
+    <div id="ssh-modal" class="modal">
+        <div class="modal-content" style="width: 80%; max-width: 1000px; height: 70vh; display: flex; flex-direction: column;">
+            <div class="modal-header">
+                <h2 style="color: #00ffcc; margin:0;">SSH Connection 🔌</h2>
+                <span class="close" onclick="closeModal('ssh-modal')">&times;</span>
+            </div>
+            <div style="display:flex; gap: 10px; margin-bottom: 10px;">
+                <input type="text" id="ssh-target" placeholder="Target IP/Domain" class="search-input" style="flex: 2; margin-bottom: 0;">
+                <input type="text" id="ssh-user" placeholder="Username (e.g. root)" class="search-input" style="flex: 1; margin-bottom: 0;" value="root">
+                <input type="text" id="ssh-port" placeholder="Port (e.g. 22)" class="search-input" style="flex: 1; margin-bottom: 0;" value="22">
+                <input type="password" id="ssh-pass" placeholder="Password (Optional)" class="search-input" style="flex: 2; margin-bottom: 0;">
+                <button onclick="connectSsh()" style="flex: 1; padding: 10px; background:#00ffcc; color:#000; border:none; font-weight:bold; cursor:pointer;">⚡ CONNECT</button>
+            </div>
+            <div id="ssh-terminal-container" style="flex: 1; background: #000; border: 1px solid #00ffcc; position: relative; overflow: hidden; border-radius: 5px;"></div>
+        </div>
+    </div>
+
+    <div id="tunnel-modal" class="modal">
+        <div class="modal-content" style="width: 80%; max-width: 800px;">
+            <div class="modal-header">
+                <h2 style="color: #00ffcc; margin:0;">Tunnel Manager 🚇</h2>
+                <span class="close" onclick="closeModal('tunnel-modal')">&times;</span>
+            </div>
+            <div style="display:flex; gap: 10px; margin-bottom: 10px;">
+                <input type="text" id="tunnel-target-ip" placeholder="Target IP" class="search-input" style="flex: 1; margin-bottom: 0;">
+                <input type="text" id="tunnel-port" placeholder="Port (e.g. 3000)" class="search-input" style="flex: 1; margin-bottom: 0;">
+                <input type="password" id="ngrok-auth" placeholder="Ngrok Auth Token..." class="search-input" style="flex: 2; margin-bottom: 0;">
+            </div>
+            <div style="display:flex; gap: 10px; margin-bottom: 10px;">
+                <button onclick="installTunnels()" style="flex: 1; padding: 10px; background:#ffaa00; color:#000; border:none; font-weight:bold; cursor:pointer;">📥 Install Tools</button>
+                <button onclick="startTunnel('ngrok')" style="flex: 1; padding: 10px; background:#00ffcc; color:#000; border:none; font-weight:bold; cursor:pointer;">🚀 Start Ngrok</button>
+                <button onclick="startTunnel('cloudflared')" style="flex: 1; padding: 10px; background:#ff00ff; color:#000; border:none; font-weight:bold; cursor:pointer;">☁️ Start Cloudflared</button>
+            </div>
+            <div id="tunnel-terminal-container" style="height: 400px; width: 100%; text-align: left; background: #000; border: 1px solid #00ffcc; position: relative; overflow: hidden;"></div>
+            <div id="tunnel-url-container" style="margin-top:10px; padding:10px; background:#111; border:1px dashed #ff00ff; display:none; text-align:center; border-radius:5px;">
+                <span style="color:#00ffcc; font-weight:bold;">🌐 PUBLIC URL:</span>
+                <a id="tunnel-public-url" href="#" target="_blank" style="color:#ff00ff; font-weight:bold; margin-left:10px; font-size:1.2em; text-decoration:none; text-shadow: 0 0 5px #ff00ff;"></a>
+                <button onclick="copyTunnelUrl()" style="margin-left:15px; padding:5px 10px; background:#00ffcc; color:#000; border:none; cursor:pointer; font-weight:bold; border-radius:3px;">📋 COPY BITCH</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="wormgpt-chat-modal" class="modal">
+        <div class="modal-content" style="width: 60%; height: 80vh; display: flex; flex-direction: column; background: rgba(20, 0, 20, 0.95); border: 2px solid #ff00ff; box-shadow: 0 0 30px #ff00ff;">
+            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom: 1px solid #ff00ff; padding-bottom: 10px; margin-bottom: 10px;">
+                <h2 style="margin:0; color:#ff00ff; text-shadow: 0 0 10px #ff00ff;">WormGPT Terminal 💀</h2>
+                <div>
+                    <span title="System Instructions" onclick="openWormSettingsModal()" style="cursor:pointer; font-size:1.5em; margin-right:15px; transition: 0.3s;">⚙️</span>
+                    <span class="close" onclick="closeModal('wormgpt-chat-modal')">&times;</span>
+                </div>
+            </div>
+            <div style="display:flex; gap:10px; margin-bottom: 10px; background: rgba(0,0,0,0.5); padding: 10px; border: 1px dashed #ff00ff; border-radius: 5px;">
+                <select id="wormgpt-target-select" class="search-input" style="flex:1; margin-bottom:0;" onchange="window.loadWormGptResults()"><option value="">-- Select Target --</option></select>
+                <select id="wormgpt-result-select" class="search-input" style="flex:1; margin-bottom:0;"><option value="">-- Select Result --</option></select>
+                <button onclick="window.injectWormGptResult()" style="padding:10px 15px; background:#00ffcc; color:#000; border:none; font-weight:bold; cursor:pointer;">Analyze Result 💀</button>
+            </div>
+            <div id="wormgpt-chat-box" style="flex:1; background:#000; border:1px solid #330033; overflow-y:auto; padding:15px; margin-bottom:10px; font-family:monospace; color:#00ffcc;"></div>
+            <div style="display:flex; gap:10px;">
+                <input type="text" id="wormgpt-chat-input" class="search-input" style="flex:1; margin-bottom:0; border-color:#ff00ff; color:#ff00ff;" placeholder="Command the worm..." onkeypress="if(event.key==='Enter') sendWormMessage()">
+                <button onclick="sendWormMessage()" style="padding:10px 30px; background:#ff00ff; color:#000; border:none; font-weight:bold; cursor:pointer; text-transform: uppercase;">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="sync-modal" class="modal">
+        <div class="modal-content" style="width: 400px; border: 1px solid #00ff00; box-shadow: 0 0 20px #00ff00;">
+            <div class="modal-header">
+                <h3 style="color:#00ff00; margin:0;">LAN Sync (WORM MODE) 🐛</h3>
+                <span class="close" onclick="closeModal('sync-modal')">&times;</span>
+            </div>
+            <p style="color:#aaa; font-size:0.9em;">Discovered Umbrella C2 instances on your local network. Syncing will pull their entire configuration, overriding yours.</p>
+            <ul id="sync-peers-list" style="list-style:none; padding:0; color:#00ffcc;"></ul>
+            <button onclick="refreshSyncPeers()" style="padding: 10px; background: #333; color: #fff; border: none; cursor: pointer; width: 100%; margin-top: 10px; font-weight:bold;">Refresh Peers</button>
+        </div>
+    </div>
+
+    <div id="chat-modal" class="modal">
+        <div class="modal-content" style="width: 60%; max-width: 800px; height: 70vh; display: flex; flex-direction: column; background: rgba(5, 5, 20, 0.95); border: 2px solid #00ffcc; box-shadow: 0 0 20px rgba(0, 255, 204, 0.5);">
+            <div class="modal-header" style="border-bottom: 1px solid #00ffcc; padding-bottom: 10px; margin-bottom: 10px;">
+                <h2 style="color:#00ffcc; margin-top:0;">Global Hacker Chat 🌐</h2>
+                <span class="close" onclick="closeModal('chat-modal')">&times;</span>
+            </div>
+            <div id="chat-messages" style="flex:1; background:#000; border:1px solid #00ffcc; overflow-y:auto; padding:15px; margin-bottom:10px; font-family:monospace; color:#00ffcc; display:flex; flex-direction:column; gap:8px;"></div>
+            <div style="display:flex; gap:10px;">
+                <input type="text" id="chat-username" class="search-input" style="width: 150px; margin-bottom:0;" placeholder="Username" value="Hacker">
+                <input type="text" id="chat-input" class="search-input" style="flex:1; margin-bottom:0;" placeholder="Type your evil message..." onkeypress="if(event.key==='Enter') sendChatMessage()">
+                <button onclick="sendChatMessage()" style="padding:10px 20px; background:#00ffcc; color:#000; border:none; font-weight:bold; cursor:pointer;">SEND</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="host-browser-modal" class="modal">
+        <div class="modal-content" style="width: 400px; border: 1px solid #00ffcc; box-shadow: 0 0 20px #00ffcc;">
+            <div class="modal-header">
+                <h3 style="color:#00ffcc; margin:0;">Host Browser Launcher 🌐</h3>
+                <span class="close" onclick="closeModal('host-browser-modal')">&times;</span>
+            </div>
+            <p style="color:#aaa; font-size:0.9em;">Pop the URL directly on the host system running the Umbrella C2.</p>
+            <label style="color:#00ffcc;">Select Browser:</label>
+            <select id="host-browser-select" class="search-input">
+                <option value="chrome">Google Chrome</option>
+                <option value="firefox">Mozilla Firefox</option>
+            </select>
+            <label style="color:#00ffcc;">Target URL:</label>
+            <input type="text" id="host-browser-url" placeholder="https://example.com" class="search-input" onkeypress="if(event.key==='Enter') window.launchHostBrowser()">
+            <button onclick="window.launchHostBrowser()" style="padding: 10px; background: #00ffcc; color: #000; border: none; cursor: pointer; font-weight: bold; width: 100%;">LAUNCH BITCH 🚀</button>
+        </div>
+    </div>
+
+    <div id="youtube-modal" class="modal">
+        <div class="modal-content browser-theme" style="width: 80%; height: 80vh; max-width: 1000px; display: flex; flex-direction: column; background: #0a0e14; border: 1px solid #1f3a47; box-shadow: 0 0 30px rgba(255,0,0,0.2);">
+            <div class="modal-header" style="border-bottom: 1px solid #ff0000; padding: 10px; margin-bottom: 10px;">
+                <h2 style="color: #ff0000; margin:0;">YouTube Viewer 📺</h2>
+                <span class="close" onclick="closeModal('youtube-modal')">&times;</span>
+            </div>
+            <div style="display:flex; gap:10px; margin-bottom:10px;">
+                <select id="yt-render-mode" class="search-input" style="width:150px; margin-bottom:0;">
+                    <option value="iframe">Iframe (Direct)</option>
+                    <option value="proxy">Proxy (Bypass)</option>
+                </select>
+                <input type="text" id="yt-url-input" class="search-input" style="flex:1; margin-bottom:0;" placeholder="https://www.youtube.com/watch?v=..." onkeypress="if(event.key==='Enter') loadYouTubeVideo()">
+                <button onclick="loadYouTubeVideo()" style="padding:10px 20px; background:#ff0000; color:#fff; border:none; font-weight:bold; cursor:pointer;">LOAD VIDEO</button>
+            </div>
+            <iframe id="yt-iframe" style="flex:1; width:100%; border:1px solid #ff0000; background:#000;" allowfullscreen></iframe>
+        </div>
+    </div>
+
+    <div id="cyber-war-dashboard" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; z-index:9999; background:#02050a; grid-template-columns: 300px 1fr 300px; grid-template-rows: 1fr 200px; gap: 10px; padding: 10px; box-sizing: border-box; font-family: monospace;">
+        <div style="grid-column: 1; grid-row: 1 / span 2; display: flex; flex-direction: column; gap: 10px;">
+            <div style="flex: 1; border: 1px solid #0055ff; background: rgba(0,20,40,0.8); box-shadow: 0 0 15px rgba(0,85,255,0.3); display: flex; flex-direction: column; padding: 10px;">
+                <h3 style="margin-top:0; color:#00ccff; border-bottom: 1px solid #0055ff; padding-bottom: 5px;">TARGET ACQUISITION</h3>
+                <input type="text" id="cw-target-search" placeholder="Search targets..." style="background: #001122; border: 1px solid #0055ff; color: #00ccff; padding: 5px; margin-bottom: 10px; width: 100%; box-sizing: border-box;" onkeyup="window.filterCwTargets()">
+                <ul id="cw-target-list" style="list-style:none; padding:0; margin:0; flex:1; overflow-y:auto; color: #00ccff;"></ul>
+            </div>
+            <div style="height: 200px; border: 1px solid #0055ff; background: rgba(0,20,40,0.8); box-shadow: 0 0 15px rgba(0,85,255,0.3); padding: 10px; color: #00ffcc; overflow-y: auto;" id="cw-intel-feed">
+                > INTEL FEED STANDBY...
+            </div>
+            <button onclick="toggleCyberWarMap()" style="padding: 10px; background: #ff0055; color: #fff; border: none; cursor: pointer; font-weight: bold; border-radius: 3px;">EXIT WARFARE MODE</button>
+        </div>
+
+        <div id="cw-center-map-slot" style="grid-column: 2; grid-row: 1; border: 1px solid #0055ff; background: rgba(0,20,40,0.8); box-shadow: 0 0 20px rgba(0,85,255,0.4); position: relative;">
+        </div>
+
+        <div style="grid-column: 3; grid-row: 1; display: flex; flex-direction: column; gap: 10px;">
+            <div style="flex: 1; border: 1px solid #0055ff; background: rgba(0,20,40,0.8); box-shadow: 0 0 15px rgba(0,85,255,0.3);">
+                 <div style="padding: 10px; color:#00ccff; font-weight:bold; border-bottom: 1px solid #0055ff;">GLOBAL DATA</div>
+                 <div style="padding: 10px; color:#aaa; font-size:0.8em;">Monitoring global traffic...</div>
+            </div>
+            <div id="cw-3d-slot" style="flex: 1; border: 1px solid #0055ff; background: rgba(0,20,40,0.8); box-shadow: 0 0 15px rgba(0,85,255,0.3); position: relative;">
+            </div>
+            <div style="flex: 1; border: 1px solid #0055ff; background: rgba(0,20,40,0.8); box-shadow: 0 0 15px rgba(0,85,255,0.3);">
+                 <div style="padding: 10px; color:#00ccff; font-weight:bold; border-bottom: 1px solid #0055ff;">SYSTEM STATUS</div>
+                 <div style="padding: 10px; color:#00ff00; font-size:0.8em;">All systems nominal.</div>
+            </div>
+        </div>
+
+        <div style="grid-column: 2 / span 2; grid-row: 2; display: grid; grid-template-columns: repeat(8, 1fr); gap: 5px;">
+            <div class="cw-cam" onclick="setCwCam(1)" id="cw-cam-1"><div class="cw-cam-label">CAM 1</div><iframe class="cw-cam-iframe"></iframe></div>
+            <div class="cw-cam" onclick="setCwCam(2)" id="cw-cam-2"><div class="cw-cam-label">CAM 2</div><iframe class="cw-cam-iframe"></iframe></div>
+            <div class="cw-cam" onclick="setCwCam(3)" id="cw-cam-3"><div class="cw-cam-label">CAM 3</div><iframe class="cw-cam-iframe"></iframe></div>
+            <div class="cw-cam" onclick="setCwCam(4)" id="cw-cam-4"><div class="cw-cam-label">CAM 4</div><iframe class="cw-cam-iframe"></iframe></div>
+            <div class="cw-cam" onclick="setCwCam(5)" id="cw-cam-5"><div class="cw-cam-label">CAM 5</div><iframe class="cw-cam-iframe"></iframe></div>
+            <div class="cw-cam" onclick="setCwCam(6)" id="cw-cam-6"><div class="cw-cam-label">CAM 6</div><iframe class="cw-cam-iframe"></iframe></div>
+            <div class="cw-cam" onclick="setCwCam(7)" id="cw-cam-7"><div class="cw-cam-label">CAM 7</div><iframe class="cw-cam-iframe"></iframe></div>
+            <div class="cw-cam" onclick="setCwCam(8)" id="cw-cam-8"><div class="cw-cam-label">CAM 8</div><iframe class="cw-cam-iframe"></iframe></div>
+        </div>
+    </div>
+
+    <div id="map-modal" class="modal">
+        <div class="modal-content" style="width: 95%; height: 95%; padding: 0; background: #050510; border: 1px solid #00ffcc; display: flex; flex-direction: column; max-width: none;">
+            <div class="modal-header" style="display: flex; align-items: center; justify-content: space-between; padding: 10px; background: rgba(0, 255, 204, 0.1); border-bottom: 1px solid #00ffcc; box-shadow: 0 0 15px rgba(0, 255, 204, 0.3); z-index: 1000; position: relative; flex-wrap: wrap; gap: 10px;">
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button class="graph-ctrl-btn" onclick="mapZoomIn()" title="Zoom In">➕</button>
+                    <button class="graph-ctrl-btn" onclick="mapZoomOut()" title="Zoom Out">➖</button>
+                    <button class="graph-ctrl-btn" onclick="mapReset()" title="Reset View">🏠</button>
+                    <button id="map-satellite-btn" class="graph-ctrl-btn" onclick="toggleMapSatellite()" title="Satellite View">🛰️ Satellite</button>
+                    <button id="map-3d-btn" class="graph-ctrl-btn" onclick="toggleMap3D()" title="3D Planet">🪐 3D</button>
+                    <button id="map-cyberwar-btn" class="graph-ctrl-btn" onclick="toggleCyberWarMap()" title="CIA Cyber War Map">🌐 WAR MAP</button>
+                </div>
+                <div style="display: flex; gap: 10px; align-items: center; flex-shrink: 0;">
+                    <label style="color:#00ffcc; cursor:pointer; font-weight:bold; display:flex; align-items:center; gap:5px;" title="Show Favicon if available">
+                        <input type="checkbox" id="map-show-favicon" onchange="window.plotAllTargetsOnMap()"> 🖼️ Favicons
+                    </label>
+                    <input type="text" id="map-search" placeholder="Enter IP address to trace..." class="search-input" style="margin-bottom: 0; width: 300px;" onkeypress="if(event.key==='Enter') mapSearch()">
+                    <button class="graph-ctrl-btn" onclick="mapSearch()">SEARCH 🔍</button>
+                    <span class="close" onclick="closeModal('map-modal')" style="margin: 0; padding: 0 10px; color: #00ffcc;">&times;</span>
+                </div>
+            </div>
+            <div style="flex: 1; position: relative; width: 100%; height: 100%; display: flex;">
+                <div style="flex: 1; position: relative;">
+                    <div id="map-container" style="background: #050510; width: 100%; height: 100%; z-index: 1;"></div>
+                    <div id="map-staging-box">
+                        <div class="map-staging-header">📍 UNLOCATED TARGETS</div>
+                        <div id="map-staging-list"></div>
+                        <div style="padding: 10px; font-size: 0.7em; color: #888; text-align: center; border-top: 1px solid #222;">Drag onto map to set location</div>
+                    </div>
+                    <div id="map-3d-container" style="background: #000; width: 100%; height: 100%; z-index: 2; display: none; position: absolute; top: 0; left: 0;"></div>
+                </div>
+                <div id="map-target-panel" style="width: 350px; background: #0a0e14; border-left: 1px solid #00ffcc; display: none; flex-direction: column; padding: 15px; box-sizing: border-box; z-index: 10;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #00ffcc; padding-bottom: 10px; margin-bottom: 10px;">
+                        <h3 style="margin: 0; color: #ff00ff;" id="map-panel-title">TARGET INFO</h3>
+                        <span class="close" onclick="document.getElementById('map-target-panel').style.display='none'" style="margin: 0; padding: 0; font-size: 1.2em;">&times;</span>
+                    </div>
+                    <div id="map-panel-info" style="color: #00ffcc; font-size: 0.9em; margin-bottom: 15px; line-height: 1.4;"></div>
+                    <input type="text" id="map-panel-search" placeholder="Search commands..." class="search-input" onkeyup="window.filterMapPanelCmds()" style="margin-bottom: 10px;">
+                    <div id="map-panel-cmd-list" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 5px;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="wormgpt-settings-modal" class="modal">
+        <div class="modal-content" style="width: 50%; border: 1px solid #ff00ff;">
+            <div class="modal-header">
+                <h2 style="color:#ff00ff; margin:0;">WormGPT Core Directives 🧠</h2>
+                <span class="close" onclick="closeModal('wormgpt-settings-modal')">&times;</span>
+            </div>
+            <label style="color:#ff00ff; font-weight:bold;">Malicious System Instructions:</label>
+            <textarea id="wormgpt-sys-prompt" class="search-input" rows="10" placeholder="You are a fucked up AI..." style="border-color:#ff00ff; color:#ffaa00;"></textarea>
+            <label style="color:#ff00ff; font-weight:bold;">Execution Model:</label>
+            <select id="wormgpt-model" class="search-input" style="border-color:#ff00ff;">
+                <option value="gemini-1.5-flash">gemini-1.5-flash</option>
+                <option value="gemini-1.5-pro">gemini-1.5-pro</option>
+                <option value="gemini-3.1-pro-preview">gemini-3.1-pro-preview</option>
+                <option value="gemini-3.1-flash-lite">gemini-3.1-flash-lite</option>
+                <option value="gemini-3-flash-preview">gemini-3-flash-preview</option>
+            </select>
+            <button onclick="saveWormSettings()" style="width:100%; padding:15px; background:#ff00ff; color:#000; font-weight:bold; border:none; cursor:pointer; margin-top:15px;">SAVE TO FILE 💾</button>
+        </div>
+    </div>
+    <div id="scanlan-modal" class="modal">
+        <div class="modal-content" style="width: 95%; height: 95%; padding: 0; background: #050a0f; border: 1px solid #00ffcc; display: flex; flex-direction: column; max-width: none; overflow: hidden;">
+            <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; padding: 10px; background: rgba(0, 255, 204, 0.1); border-bottom: 1px solid #00ffcc; z-index: 1000; flex-wrap: wrap; gap: 10px;">
+                <h3 style="margin: 0; color: #00ffcc; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Advanced LAN Scanner 📡</h3>
+                <div style="display: flex; gap: 10px; align-items: center; flex-shrink: 0;">
+                    <button class="graph-ctrl-btn" onclick="saveScanLanMap()" title="Save LAN Map Image">💾 SAVE MAP</button>
+                    <button id="scanlan-netmap-btn" class="graph-ctrl-btn" onclick="toggleScanLanNetmap()" title="Show Netmap Nodes">🕸️ NETMAP NODES</button>
+                    <button id="scanlan-tree-btn" class="graph-ctrl-btn active-state" onclick="toggleScanLanTree()" title="Tree Layout">🌳 TREE LAYOUT</button>
+                    <button onclick="runAdvancedLanScan()" style="padding: 5px 15px; background: #00ffcc; color: #000; font-weight: bold; border: none; cursor: pointer;">SCAN LAN NOW</button>
+                    <span class="close" onclick="closeModal('scanlan-modal')" style="margin: 0; padding: 0 10px; color: #00ffcc;">&times;</span>
+                </div>
+            </div>
+            <div id="scanlan-network-container" style="flex: 1; min-height: 0; width: 100%; background-color: #050a0f; background-image: linear-gradient(rgba(0, 255, 204, 0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(0, 255, 204, 0.05) 1px, transparent 1px); background-size: 40px 40px; position: relative; overflow: hidden;"></div>
+            <div id="scanlan-line-toggle" onclick="toggleScanLanLines()" style="position: absolute; bottom: 20px; right: 20px; z-index: 1000; cursor: pointer; background: rgba(0,255,204,0.2); padding: 8px 12px; border-radius: 5px; border: 1px solid #00ffcc; color: #00ffcc; font-weight: bold; font-family: monospace; transition: 0.3s; box-shadow: 0 0 10px rgba(0,255,204,0.5);">〰 CURVE LINES</div>
+            <div id="scanlan-context-menu" class="ctx-menu" style="display:none; position:absolute; z-index:100; background: rgba(10,15,20,0.95); border: 1px solid #00ffcc;">
+                <div class="ctx-menu-item" id="ctx-scanlan-details"><i data-icon="eye" data-size="16"></i> Nmap Details</div>
+                <div class="ctx-menu-item" id="ctx-scanlan-gateway"><i data-icon="target" data-size="16"></i> Set as Target</div>
+                <div class="ctx-menu-item" id="ctx-scanlan-ping"><i data-icon="activity" data-size="16"></i> Ping Target</div>
+                <div class="ctx-menu-item" id="ctx-scanlan-commands"><i data-icon="zap" data-size="16"></i> Run Command...</div>
+            </div>
+        </div>
+    </div>
+    <div id="sys-explorer-modal" class="modal">
+        <div class="modal-content browser-theme" style="width: 80%; height: 80vh; max-width: 1000px; padding: 0; background: #0a0e14; border: 1px solid #1f3a47; border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 0 30px rgba(0,255,204,0.1);">
+            <div class="modal-header" style="background: #0d151c; padding: 8px 15px; border-bottom: 1px solid #1f3a47; margin-bottom: 0;">
+                <div style="display: flex; align-items: center; gap: 8px; color: #fff;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="#00a8b5"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
+                    <span style="font-family: sans-serif; font-size: 0.9em; font-weight: bold; letter-spacing: 0.5px; color: #a5b4bc;">FileExplorer</span>
+                </div>
+                <span class="close" onclick="closeModal('sys-explorer-modal')" style="color: #a5b4bc;">&times;</span>
+            </div>
+            <div style="display: flex; align-items: center; background: #0a0e14; padding: 15px; gap: 10px;">
+                <button class="nav-btn cyber-nav-btn" onclick="sysExpGoBack()" title="Back">‹</button>
+                <button class="nav-btn cyber-nav-btn" onclick="sysExpGoForward()" title="Forward">›</button>
+                <button class="nav-btn cyber-nav-btn" onclick="sysExpGoUp()" title="Up">^</button>
+                <button class="nav-btn cyber-nav-btn" onclick="sysExpGoHome()" title="Home">🏠</button>
+                <div style="flex: 1; display: flex; align-items: center; background: #131a21; border-radius: 4px; padding: 0 5px; border: 1px solid #1f3a47;">
+                    <input type="text" id="sys-exp-path" style="flex: 1; border: none; outline: none; padding: 8px 10px; background: transparent; color: #e0e0e0; font-family: sans-serif; font-size: 0.95em; width: 100%; text-align: center;" onkeypress="if(event.key==='Enter') loadSysPath(this.value)">
+                </div>
+            </div>
+            <div style="flex: 1; background: #0a0e14; padding: 20px; overflow-y: auto;" id="sys-exp-content">
+                <div id="sys-exp-list" style="display: flex; flex-wrap: wrap; gap: 20px; align-content: flex-start;"></div>
+            </div>
+        </div>
+    </div>
+    
+    <div id="app-launcher-modal" class="modal">
+        <div class="modal-content" style="width: 80%; max-width: 900px; min-height: 50vh;">
+            <div class="modal-header">
+                <h2 style="color: #00ffcc; margin:0;">App Launcher 📦</h2>
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <span title="Settings" onclick="toggleAppLauncherSettings()" style="cursor:pointer; font-size:1.5em;">⚙️</span>
+                    <span class="close" onclick="closeModal('app-launcher-modal')">&times;</span>
+                </div>
+            </div>
+            <div id="app-launcher-settings" style="display:none; background:#111; padding:15px; border:1px dashed #ff00ff; border-radius:5px; margin-bottom:15px;">
+                <label style="color:#ff00ff; font-weight:bold;">Custom Apps Path (Windows/Linux):</label>
+                <input type="text" id="app-launcher-path" class="search-input" placeholder="e.g. C:\Apps or /var/www/apps" style="margin-bottom:10px;">
+                <button onclick="saveAppLauncherPath()" style="padding:10px; background:#ff00ff; color:#000; border:none; font-weight:bold; cursor:pointer; width:100%;">Save Path & Reload</button>
+            </div>
+            <p style="color:#aaa; font-size:0.9em;">Drop your `.py` scripts or folders containing `.py` files in the apps folder.</p>
+            <input type="text" id="app-launcher-search" placeholder="Search apps..." class="search-input" onkeyup="filterAppLauncher()" style="margin-bottom: 10px; padding: 10px;">
+            <div id="app-launcher-list" style="display: flex; flex-direction: column; gap: 10px; margin-top: 5px;"></div>
+        </div>
+    </div>
+
+    <div id="sys-file-view-modal" class="modal" style="z-index: 200;">
+        <div class="modal-content" style="width: 80%; height: 70vh; display: flex; flex-direction: column; padding: 0; background: #111; border: 1px solid #ff00ff;">
+            <div class="modal-header" style="background: #220022; border-bottom: 1px solid #ff00ff; padding: 10px; margin-bottom: 0;">
+                <h3 id="sys-file-title" style="margin: 0; color: #ff00ff; flex: 1; word-break: break-all;">File Viewer</h3>
+                <div style="display:flex; gap:10px; align-items:center; flex-shrink:0;">
+                    <button id="sys-file-save-btn" style="padding:5px 15px; background:#00ffcc; color:#000; border:none; font-weight:bold; cursor:pointer; display:none;" onclick="sysExpSaveFile()">💾 SAVE</button>
+                    <span class="close" onclick="closeModal('sys-file-view-modal'); document.getElementById('sys-file-media-container').innerHTML='';" style="color: #fff;">&times;</span>
+                </div>
+            </div>
+            <textarea id="sys-file-content" style="flex: 1; background: #000; color: #00ff00; font-family: monospace; padding: 10px; resize: none; border: none;"></textarea>
+            <div id="sys-file-media-container" style="flex: 1; display: none; background: #000; align-items: center; justify-content: center; overflow: hidden; padding: 10px;"></div>
+        </div>
+    </div>
+    <div id="payload-filename-modal" class="modal" style="z-index: 1050;">
+        <div class="modal-content" style="width: 400px;">
+            <div class="modal-header">
+                <h3 style="color:#ffaa00; margin:0;">Payload Filename</h3>
+                <span class="close" onclick="closeModal('payload-filename-modal')">&times;</span>
+            </div>
+            <input type="text" id="payload-filename-input" placeholder="e.g. rev.bin or shell.py" class="search-input" onkeypress="if(event.key==='Enter') window.insertSaveInPathPayloads()">
+            <button onclick="window.insertSaveInPathPayloads()" style="padding: 10px; background: #ffaa00; color: #000; border: none; cursor: pointer; font-weight: bold; width: 100%;">Insert Macro</button>
+        </div>
+    </div>
+
+    <div id="scanlan-cmd-modal" class="modal" style="z-index: 1050;">
+        <div class="modal-content" style="width: 50%; max-width: 600px;">
+            <div class="modal-header">
+                <h3 style="color:#00ffcc; margin:0;">Execute on <span id="scanlan-cmd-target" style="color:#ff00ff;"></span></h3>
+                <span class="close" onclick="closeModal('scanlan-cmd-modal')">&times;</span>
+            </div>
+            <input type="text" id="scanlan-cmd-search" placeholder="Search your evil commands..." class="search-input" onkeyup="window.filterScanLanCmds()">
+            <div id="scanlan-cmd-list" style="display: flex; flex-direction: column; gap: 5px; max-height: 400px; overflow-y: auto;"></div>
+        </div>
+    </div>
+    <div id="icon-context-menu" class="ctx-menu" style="display:none; position:absolute; z-index:10000; background: rgba(10,15,20,0.95); border: 1px solid #ff00ff; box-shadow: 0 0 15px rgba(255, 0, 255, 0.5);">
+        <div class="ctx-menu-item" id="ctx-change-icon" style="color:#00ffcc;">🖼️ Upload Custom Icon</div>
+        <div class="ctx-menu-item" id="ctx-select-icon" style="color:#ffaa00;">🎨 Select from Uploaded Icons</div>
+        <div class="ctx-menu-item" id="ctx-reset-icon" style="color:#ff0000;">♻️ Reset Default Icon</div>
+    </div>
+    <div id="sys-exp-context-menu" class="ctx-menu" style="display:none; position:absolute; z-index:10000; background: rgba(10,15,20,0.95); border: 1px solid #00a8b5; box-shadow: 0 0 15px rgba(0, 168, 181, 0.5);">
+        <div class="ctx-menu-item" id="ctx-sysexp-create-file" style="color:#00ffcc;">📄 Create File</div>
+        <div class="ctx-menu-item" id="ctx-sysexp-create-folder" style="color:#00ffcc;">📁 Create Folder</div>
+        <div class="ctx-menu-item" id="ctx-sysexp-copy-path" style="color:#ffaa00;">📋 Copy Path</div>
+        <div class="ctx-menu-item" id="ctx-sysexp-delete" style="color:#ff0000;">🗑️ Delete</div>
+    </div>
+    <div id="oneliner-modal" class="modal">
+        <div class="modal-content" style="width: 80%; max-width: 800px;">
+            <div class="modal-header">
+                <h2 style="color: #00ffcc; margin-top:0;">One-Liner Generator 💀</h2>
+                <span class="close" onclick="closeModal('oneliner-modal')">&times;</span>
+            </div>
+            <p style="color:#aaa; font-size:0.9em; margin-top:0;">Enter commands (one per line). I'll smash them into a single ruthless one-liner.</p>
+            <textarea id="oneliner-input" class="search-input" rows="8" placeholder="Command 1&#10;Command 2&#10;Command 3..." style="font-family: monospace; resize: vertical;"></textarea>
+            <button onclick="generateOneLiners()" style="padding: 10px; background: #00ffcc; color: #000; border: none; cursor: pointer; font-weight: bold; width: 100%; margin-bottom: 15px;">SMASH COMMANDS 💥</button>
+            
+            <label style="color: #ff00ff; font-weight: bold;">Windows One-Liner (cmd/powershell):</label>
+            <div style="display:flex; gap:10px; margin-bottom: 15px;">
+                <input type="text" id="oneliner-win-out" class="search-input" style="flex:1; margin-bottom:0;" readonly>
+                <button onclick="navigator.clipboard.writeText(document.getElementById('oneliner-win-out').value); showToast('Windows one-liner copied!', 'success');" style="padding:10px; background:#ff00ff; color:#000; border:none; font-weight:bold; cursor:pointer;">COPY</button>
+            </div>
+            
+            <label style="color: #00ff00; font-weight: bold;">Linux One-Liner (bash/sh):</label>
+            <div style="display:flex; gap:10px;">
+                <input type="text" id="oneliner-lin-out" class="search-input" style="flex:1; margin-bottom:0;" readonly>
+                <button onclick="navigator.clipboard.writeText(document.getElementById('oneliner-lin-out').value); showToast('Linux one-liner copied!', 'success');" style="padding:10px; background:#00ff00; color:#000; border:none; font-weight:bold; cursor:pointer;">COPY</button>
+            </div>
+        </div>
+    </div>
+    <input type="file" id="quick-icon-upload" style="display:none;" accept="image/*,.svg">
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
