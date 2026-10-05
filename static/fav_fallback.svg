@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- Favicon fallback: dark hexagon chip with "WWW" — shown when a target favicon can't be loaded -->
+  <circle cx="32" cy="32" r="30" fill="#0a0a18" stroke="#00ffcc" stroke-width="2.5"/>
+  <circle cx="32" cy="32" r="22" fill="none" stroke="#00ffcc" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.6"/>
+  <path d="M20 24 L27 40 L32 30 L37 40 L44 24" fill="none" stroke="#00ffcc" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="32" cy="32" r="29" fill="none" stroke="none"/>
+</svg>
